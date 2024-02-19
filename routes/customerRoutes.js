@@ -3,12 +3,18 @@ import bodyParser from "body-parser";
 import pg from "pg";
 import axios from "axios";
 import bcrypt from "bcrypt";
-// import customerRoutes from "./routes/customerRoutes.js"
+import jwt from "jsonwebtoken";
+import authMiddleware from '.././middleware/authMiddleware.js';
+import { check, body, validationResult } from 'express-validator';
+import nodemailer from "nodemailer";
+import moment from "moment";
+import dotenv from "dotenv";
 
+dotenv.config();
 
+const SecretKey = process.env.SecretKey;
 export const app = express();
-const port = 3000;
-const saltRounds = 10;
+const saltRounds = process.env.saltrounds;
 
 app.use(bodyParser.urlencoded({extended: true,}));
 
@@ -25,9 +31,31 @@ db.connect();
 
 const router = express.Router();
 
-router.post("/register",async (req,res)=>{
-    try {
-        // DATA TO BE CAPTURED FROM THE REQUEST
+const transpoter = nodemailer.createTransport({
+    host:"smtp.gmail.com",
+    port:465,
+    secure:true,
+    auth:{
+        user:"nanditsareria@gmail.com",
+        pass:"yefq hjde ubld xafq"
+    }
+})
+
+router.post("/register",
+check("fName").not().isEmpty().isString(),
+check("lName").not().isEmpty().isString(),
+check("email").isEmail(),
+check("password").isLength({min:6}),
+check("mobile").isMobilePhone(),
+check("dob").isDate(),
+async (req,res)=>{
+    const errors = validationResult(req)
+    if(!errors.isEmpty()){
+        res.send(errors);
+    }else{
+
+        try {
+            // DATA TO BE CAPTURED FROM THE REQUEST
         const fName = req.body.fName;
         const lName = req.body.lName;
         const email = req.body.email;
@@ -76,7 +104,7 @@ router.post("/register",async (req,res)=>{
                         }
                         res.status(200).send({
                             isSuccess:isSuccess,
-                            data:result.rows[0].customer_id
+                            id:result.rows[0].customer_id
                         });
                     } catch (error) {
                         console.log(error);
@@ -88,15 +116,22 @@ router.post("/register",async (req,res)=>{
     } catch (error) {
         console.log(error)
     }
+}
 })
 
+router.post("/login",
+check("email").isEmail(),
+check("password").not().isEmpty(),async (req,res)=>{
 
-router.post("/login",async (req,res)=>{
-    const email = req.body.email;
-    const password = req.body.password;
-    var isSuccess=false;
-
+const errors = validationResult(req);
+if(!errors.isEmpty()){
+    res.send(errors);
+}else{
+    
     try {
+        const email = req.body.email;
+        const password = req.body.password;
+        var isSuccess=false;
         // CHECK IF USER EMAIL EXISTS IN THE DATABASE
         const result = await db.query(`SELECT * FROM "customer" where "email" = $1`,[email]);
         
@@ -112,9 +147,11 @@ router.post("/login",async (req,res)=>{
                     if(result){
                     isSuccess=true;
                     const result = await db.query("UPDATE customer SET last_login_ip = $1,  last_login_timestamp = now()  WHERE customer_id = $2 returning *",[req.socket.remoteAddress,user.customer_id])
+                    const token = jwt.sign({ user }, SecretKey , { expiresIn: '1h' });
                     res.send({
                         isSuccess:isSuccess,
-                        data:result.rows[0] 
+                        data:result.rows[0],
+                        token
                     })}else{
                         res.send({
                         isSuccess:isSuccess,})
@@ -133,14 +170,21 @@ router.post("/login",async (req,res)=>{
                 message:"No user found with the given email address."
             })
         }
-      } catch (error) {
+    } catch (error) {
         res.send({
             message:error,
             error:"Error in making request"})
-      }
+        }
+}
 })
-
-router.get("/getcustomerwithid",async (req,res)=>{
+    
+router.get("/getcustomerwithid",
+check("id").isNumeric(),authMiddleware,
+async (req,res)=>{
+    const errors = validationResult(req)
+    if(!errors.isEmpty()){
+        res.send(errors);
+    }else{
     var id = parseInt(req.query.id);
     try {
         const result = await db.query("SELECT * from customer where customer_id=$1",[id]);
@@ -160,10 +204,97 @@ router.get("/getcustomerwithid",async (req,res)=>{
         }
     } catch (error) {
     console.log(error)    
+    }}
+})
+
+router.post("/forgetPassword",
+check("email").isEmail(),
+async(req,res)=>{
+
+    // IF VALIDATION ERRORS RETURN ERRORS
+    const errors = validationResult(req);
+    if(!errors.isEmpty()){
+        res.send(errors);
+    }
+    else{
+        // ELSE TRY FINDING CUSTOMER WITH THE PROVIDED EMAIL
+       try {
+        const email = req.body.email;
+        const findCustomer = await db.query(`SELECT * FROM "customer" where "email" = $1`,[email]);
+        // IF CONDITION TO CHECK IF CUSTOMER WITH GIVEN MAIL IS FOUND
+        if(findCustomer.rowCount>0){
+            const OTP = Math.floor(Math.random().toPrecision()*100000);
+            const customer_id = findCustomer.rows[0].customer_id;
+            try{
+            // IF FOUND UPDATE OTP,VALIDITY AND TIMESTAMP IN THE DATABASE
+            const result = await db.query("UPDATE customer SET reset_OTP=$1, reset_otp_validity=20, reset_password_timestamp = now() WHERE customer_id =$2 RETURNING *",[OTP,customer_id])
+            //SEND OTP MAIL TO THE CUSTOMER
+            const info = await transpoter.sendMail({
+                from: "Salonify", // sender address
+                to: email, // reciever address
+                subject: "Salonify: OTP to Reset your password", // Subject
+                // text: "Hello world?", // plain text body
+                html: "Hello, " + email + "<br>" + "Please use below mentioned OTP to reset your password. <br> <h1>"+OTP+"</h1>", // html body
+            });
+            res.send("OTP Sent to Registered mail address")}
+            catch(error){
+                res.send(error);
+            }
+        }else{
+            res.send("OTP sent to Registered mail address.")
+        }
+       } catch (error) {
+        res.send(errors);
+       }
     }
 })
 
+router.post("/verifyOTP",
+check("email").isEmail(),check("otp").isNumeric(),
+async (req,res)=>{
+    //CHECK FOR VALIDATION ERRORS
+    const errors = validationResult(req);
+    //IF VALIDATION ERRORS FOUND, RETURN ERROR
+    if(!errors.isEmpty()){
+        res.send(errors);
+    }
+    //ELSE TRY FINDING THE CUSTOMER WITH THE PROVIDED EMAIL
+    else{
+        try{
+            const email = req.body.email;
+            const otp = parseInt(req.body.otp);
+            const result = await db.query("SELECT reset_otp,reset_otp_validity,reset_password_timestamp FROM customer WHERE email = $1",[email])
+            // IF CUSTOMER WITH THE PROVIDED EMAIL IS FOUND DO FOLLOWING,
+            const otp_timeout = moment(result.rows[0].reset_password_timestamp).add(20,'m').toDate();
+            let current_time = moment().toISOString();
+            current_time = moment(current_time).toDate();
+            if(result.rowCount>0){
+                // TRY FINDING IF OTP IS EXPIRED OR NOT
+            if(otp_timeout>current_time){
+                // IF NOT EXPIRED, CHECK IF OTP ENTERED MATCHES WITH OTP SENT
+                if(otp === parseInt(result.rows[0].reset_otp)){
+                    res.send("Succesfully Verified")
+                }
+                //ELSE SEND WRONG OTP ERROR
+                else{
+                    res.send("Invalid OTP")
+                }
+            // IF CURRENT TIME IS BIGGER THAN OTP TIMEOUT
+            }else{
+                res.send("OTP EXPIRED" )
+            }
+            //ELSE SEND ERROR
+            }else{
+                res.send("Opps. Error verifying OTP");
+            }
 
+        }
+        catch(error){
+            res.send(error)
+        }
+    }
+    
 
+})
 
 export default router;

@@ -3,23 +3,29 @@ import bodyParser from "body-parser";
 import pg from "pg";
 import axios from "axios";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import authMiddleware from '.././middleware/authMiddleware.js';
+import { check, validationResult } from "express-validator";
 
+
+dotenv.config();
 
 export const app = express();
 const router = express.Router();
 
 const saltRounds = 10;
-
+const SecretKey = "TopSecret";
 app.use(bodyParser.urlencoded({extended: true,}));
 
 // DATABASE CONNECTION
 export const db =  new pg.Client({
-  database : "salon",
-  user : "postgres",
-  password:"root",
-  host:"localhost",
-  port:5432
-})
+    database : process.env.database,
+    user : process.env.dbuser,
+    password:process.env.dbpassword,
+    host:process.env.dbhost,
+    port:process.env.dbport,
+  })
 
 db.connect();
 
@@ -31,6 +37,7 @@ router.post("/register",async (req,res)=>{
         const email = req.body.email;
         const password = req.body.password;
         const contact_number = req.body.contact_number;
+        const location = req.body.location;
         var isSuccess=false;
         
 
@@ -67,7 +74,7 @@ router.post("/register",async (req,res)=>{
                         error:"Error in making request"})
             }else{
                     try {
-                        const result = await db.query("INSERT INTO salon (salon_name,email,password,contact_number) VALUES ($1,$2,$3,$4) returning *",[salon_name,email,hash,contact_number]);
+                        const result = await db.query("INSERT INTO salon (salon_name,email,password,contact_number,location) VALUES ($1,$2,$3,$4,$5) returning *",[salon_name,email,hash,contact_number,location]);
                         if(result.rows.length>0){
                             isSuccess = true;
                         }
@@ -113,9 +120,12 @@ router.post("/login",async (req,res)=>{
                     if(result){
                     isSuccess=true;
                     const result = await db.query("UPDATE salon SET last_login_ip = $1,  last_login_timestamp = now()  WHERE salon_id = $2 returning *",[req.socket.remoteAddress,user.salon_id])
+                    const token = jwt.sign({ user }, SecretKey , { expiresIn: '1h' });
+                    
                     res.send({
                         isSuccess:isSuccess,
-                        data:result.rows[0] 
+                        data:result.rows[0],
+                        token:token
                     })}else{
                         res.send({
                         isSuccess:isSuccess,})
@@ -137,7 +147,7 @@ router.post("/login",async (req,res)=>{
       }
 })
 
-router.get("/getallsalonsatlocation",async (req,res)=>{
+router.get("/getallsalonsatlocation",authMiddleware,async (req,res)=>{
     const locationId = parseInt(req.query.locationId);
     try {
         const result = await db.query("SELECT * from salon where location=$1",[locationId]);
@@ -151,7 +161,7 @@ router.get("/getallsalonsatlocation",async (req,res)=>{
     }
 })
 
-router.get("/getsalonwithid",async (req,res)=>{
+router.get("/getsalonwithid",authMiddleware,async (req,res)=>{
     var id = parseInt(req.query.salonId);
     try {
         const result = await db.query("SELECT * from salon where salon_id=$1",[id]);
@@ -174,14 +184,12 @@ router.get("/getsalonwithid",async (req,res)=>{
     }
 });
 
-router.get("/getemployeewithid",(req,res)=>{
+router.get("/getemployeewithid",authMiddleware,(req,res)=>{
     var id = parseInt(req.query.id)-1;
     res.send(employees[id]);
 })
 
-
-
-router.get("/getsalonemployees",(req,res)=>{
+router.get("/getsalonemployees",authMiddleware,(req,res)=>{
     try {
         const salon_id = req.body.salon_id;
 
@@ -201,6 +209,26 @@ router.get("/getsalonemployees",(req,res)=>{
 
     } catch (error) {
         res.send({message:error})
+    }
+})
+
+router.get("/getSalonRecommendation",authMiddleware,
+check("location").not().isEmpty()
+,async (req,res)=>{
+    const validationErrors = validationResult(req);
+    if(!validationErrors.isEmpty()){
+        res.send({ errors: validationErrors.array() });
+    }else{
+        try{
+            const location = req.query.location;
+
+            const result = await db.query("SELECT salon.salon_id, salon.salon_name, COUNT(*) AS appointment_count FROM public.appointment JOIN public.salon ON appointment.salon_id = salon.salon_id WHERE salon.location = $1 GROUP BY salon.salon_id, salon.salon_name ORDER BY appointment_count DESC LIMIT 10;",[location]);
+            res.send(result.rows)
+        }
+        catch(error){
+            console.log(error)
+        }
+
     }
 })
 

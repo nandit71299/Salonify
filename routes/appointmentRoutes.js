@@ -3,10 +3,18 @@ import bodyParser from "body-parser";
 import pg from "pg";
 import axios from "axios";
 import bcrypt from "bcrypt";
+import { check, body, validationResult } from 'express-validator';
+import dotenv from "dotenv";
+import authMiddleware from '.././middleware/authMiddleware.js';
+
+
+dotenv.config();
+
 
 export const app = express();
 const router = express.Router();
-const saltRounds = 10;
+const port = process.env.port;
+const saltRounds = process.env.saltrounds;
 
 app.use(bodyParser.urlencoded({extended: true,}));
 
@@ -21,10 +29,28 @@ export const db =  new pg.Client({
 
 db.connect();
 
-router.post("/createappointment",async (req,res)=>{
 
+router.post("/checkAppointmentAvailability",
+check("service_id","Invalid Service").not().isEmpty(),
+check("service_id","Invalid Service").isNumeric(),
+check("time","Invalid Appointment Time").not().isEmpty(),
+check("time","Invalid Appointment Time").isTime(),
+check("appointment_date","Invalid Appointment Date ").not().isEmpty(),
+check("appointment_date","Invalid Appointment Date ").isDate(),
+check("employee_id","Invalid Employee ID").not().isEmpty(),
+check("employee_id","Invalid Employee ID").isNumeric(),
+authMiddleware,
+async (req,res)=>{
 
-    function addMinutes(date, minutes) {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // If there are validation errors, render the form again with errors
+      res.send({ errors: errors.array() });
+    }else{
+      
+      
+      
+      function addMinutes(date, minutes) {
         date.setMinutes(date.getMinutes() + minutes);
       
         return date;
@@ -71,32 +97,31 @@ router.post("/createappointment",async (req,res)=>{
         const newEnd = new Date(appointmentDate + " "+ newEndTime);
       
         return (
-          (newStart >= apptStart && newStart < apptEnd) ||
-          (newEnd > apptStart && newEnd <= apptEnd) ||
-          (newStart <= apptStart && newEnd >= apptEnd)
+            (newStart >= apptStart && newStart < apptEnd) ||
+            (newEnd > apptStart && newEnd <= apptEnd) ||
+            (newStart <= apptStart && newEnd >= apptEnd)
         );
       });
       
       console.log(isOverlapping); // true or false
       
       res.send(isOverlapping)
-
-
-});
-
-router.get("/getallappointments",async (req,res)=>{
-    try {
-        const result = await db.query("SELECT * from appointment");
-        res.send(result.rows);
-    } catch (error) {
-    console.log(error)    
     }
+
+
 });
+
+// router.post("/getappointmentsofemployee",{
+
+// });
+
+
+
 
 router.get("/getappointmentwithid",async (req,res)=>{
     var id = parseInt(req.query.id);
     try {
-        const result = await db.query("SELECT * from apppointment where id=$1",[id]);
+        const result = await db.query("SELECT * from appointment where appointment_id=$1",[id]);
         res.send(result.rows);
     } catch (error) {
     console.log(error)    

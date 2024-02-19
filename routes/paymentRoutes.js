@@ -3,10 +3,15 @@ import bodyParser from "body-parser";
 import pg from "pg";
 import axios from "axios";
 import bcrypt from "bcrypt";
+import dotenv from "dotenv";
+import authMiddleware from '.././middleware/authMiddleware.js';
 
-const router = express.Router();
-const saltRounds = 10;
+
+dotenv.config();
+
 export const app = express();
+const router = express.Router();
+
 app.use(bodyParser.urlencoded({extended: true,}));
 
 // DATABASE CONNECTION
@@ -21,8 +26,8 @@ export const db =  new pg.Client({
 db.connect();
 
 
-router.get("/initializepayment",async (req,res)=>{
-
+router.get("/initializepayment",authMiddleware,async (req,res)=>{
+res.send("You are in")
 })
 
 
