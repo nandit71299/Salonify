@@ -1,2 +1,6 @@
 .env
 node_modules
+db.js
+enums.js
+newFile.js
+secrets.js
