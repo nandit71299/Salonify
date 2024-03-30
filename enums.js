@@ -22,4 +22,8 @@ const appointmentType = {
 
 }
 
+const check = {
+    hello:1
+}
+
 export { EmployeeType, UserType, is_active,appointmentType };
