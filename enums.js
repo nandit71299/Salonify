@@ -15,15 +15,21 @@ const is_active = {
 }
 
 const appointmentType = {
-    Pending_Payment_Confirmation:1,
-    Confirmed:2,
-    Partially_Paid:3,
-    Closed:4,
+    Pending_Payment_Confirmation: 1,
+    Confirmed: 2,
+    Partially_Paid: 3,
+    Closed: 4,
 
 }
 
-const check = {
-    hello:1
+const advance_payment_type = {
+    regular: 1,
+    offer: 2
 }
 
-export { EmployeeType, UserType, is_active,appointmentType };
+const advance_payment_amount_type = {
+    percentage: 1,
+    fixed: 2
+}
+
+export { EmployeeType, UserType, is_active, appointmentType };

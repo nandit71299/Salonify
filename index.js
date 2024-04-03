@@ -15,11 +15,11 @@ const port = process.env.port;
 
 
 
-app.use(bodyParser.urlencoded({extended: true,}));
+app.use(bodyParser.urlencoded({ extended: true, }));
 
 // Index Route
-app.get("/",(req,res)=>{
-res.render("index.ejs")
+app.get("/", (req, res) => {
+    res.render("index.ejs")
 })
 
 
@@ -34,11 +34,9 @@ res.render("index.ejs")
 // app.use('/api/services',serviceRoutes);
 
 
-app.use('/api/owners',salonowners);
+app.use('/api/owners', salonowners);
 
-app.use('/api/customers',salonifycustomers);
-
-
+app.use('/api/customers', salonifycustomers);
 
 
 
@@ -46,6 +44,8 @@ app.use('/api/customers',salonifycustomers);
 
 
 
-app.listen(port,()=>
-    console.log("Server is running on port" + port )
+
+
+app.listen(port, () =>
+    console.log("Server is running on port" + port)
 )
