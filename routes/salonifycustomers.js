@@ -1,34 +1,40 @@
 import express from "express";
 import bodyParser from "body-parser";
-import db from "../db.js";
+import db from "../database.js";
 import axios from "axios";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import authMiddleware from '../middleware/authMiddleware.js';
-import { check, body, validationResult } from 'express-validator';
+import { check, body, validationResult, param } from 'express-validator';
 import nodemailer from "nodemailer";
 import moment from "moment";
 import dotenv from "dotenv";
 import * as enums from "../enums.js"
 import { fileURLToPath } from 'url';
 import path, { parse } from 'path';
-import fs from 'fs/promises';
+import fs from 'fs';
+
 
 const router = express.Router();
-
-
-router.get("/testsalonifycustomerroute", (req, res) => {
-
-    console.log("Test Succesfull.")
-})
 
 const SecretKey = process.env.SecretKey;
 export const app = express();
 const saltRounds = Number(process.env.saltrounds);
 
+let transporter =
+    nodemailer.createTransport(
+        {
+            service: 'gmail',
+            auth: {
+                user: 'nanditsareria@gmail.com',
+                pass: 'yefq hjde ubld xafq'
+            }
+        }
+    );
 
 app.use(bodyParser.urlencoded({ extended: true, }));
 
+var jsonParser = bodyParser.json();
 
 router.post("/sendOTP",
     check("email").isEmail(),
@@ -36,45 +42,42 @@ router.post("/sendOTP",
         // IF VALIDATION ERRORS RETURN ERRORS
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            res.send(errors);
+            return res.send(errors);
         }
-        else {
-            // ELSE TRY FINDING CUSTOMER WITH THE PROVIDED EMAIL
-            try {
-                const email = req.body.email.toLowerCase();
-                console.log(email)
-                const findCustomer = await db.query("SELECT * FROM users WHERE email like $1 AND status = $2 ", [email, enums.is_active.yes]);
-                // IF CONDITION TO CHECK IF CUSTOMER WITH GIVEN MAIL IS FOUND
-                if (findCustomer.rowCount > 0) {
-                    const OTP = Math.floor(Math.random().toPrecision() * 100000);
-                    const customer_id = findCustomer.rows[0].id;
-                    try {
-                        // IF FOUND UPDATE OTP,VALIDITY AND TIMESTAMP IN THE DATABASE
-                        const result = await db.query("UPDATE users SET OTP=$1, otp_validity=20, reset_password_timestamp = now() WHERE id =$2 RETURNING *", [OTP, customer_id])
-                        //SEND OTP MAIL TO THE CUSTOMER
-                        const info = await transpoter.sendMail({
-                            from: "Salonify", // sender address
-                            to: "nanditsareria@gmail.com", // reciever address
-                            subject: "Salonify: OTP to Reset your password", // Subject
-                            // text: "Hello world?", // plain text body
-                            html: "Hello, " + email + "<br>" + "Please use below mentioned OTP to reset your password. <br> <h1>" + OTP + "</h1>", // html body
-                        });
 
-                        res.send({
-                            message: "OTP Sent to Registered mail address..",
-                            otp: result.rows[0].otp
-                        })
-                    }
-                    catch (error) {
-                        res.send(error);
-                    }
-                } else {
-                    console.log("not found");
-                    res.send("OTP sent to Registered mail address.")
+        // ELSE TRY FINDING CUSTOMER WITH THE PROVIDED EMAIL
+        try {
+            const email = req.body.email.toLowerCase();
+            const findCustomer = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type=$3 ", [email, enums.is_active.yes, enums.UserType.customer]);
+            // IF CONDITION TO CHECK IF CUSTOMER WITH GIVEN MAIL IS FOUND
+            if (findCustomer.rowCount > 0) {
+                const OTP = Math.floor(Math.random().toPrecision() * 100000);
+                const customer_id = findCustomer.rows[0].id;
+                try {
+                    // IF FOUND UPDATE OTP,VALIDITY AND TIMESTAMP IN THE DATABASE
+                    const result = await db.query("UPDATE users SET OTP=$1, otp_validity=20, reset_password_timestamp = now() WHERE id =$2 RETURNING *", [OTP, customer_id])
+                    //SEND OTP MAIL TO THE CUSTOMER
+                    const info = await transporter.sendMail({
+                        from: "Salonify", // sender address
+                        to: "nanditsareria@gmail.com", // reciever address
+                        subject: "Salonify: OTP to Reset your password", // Subject
+                        // text: "Hello world?", // plain text body
+                        html: "Hello, " + email + "<br>" + "Please use below mentioned OTP to reset your password. <br> <h1>" + OTP + "</h1>", // html body
+                    });
+
+                    res.send({
+                        message: "OTP Sent to Registered mail address..",
+                        otp: result.rows[0].otp
+                    })
                 }
-            } catch (error) {
-                res.send(error);
+                catch (error) {
+                    res.send(error);
+                }
+            } else {
+                res.send("OTP sent to Registered mail address.")
             }
+        } catch (error) {
+            res.send(error);
         }
     });
 
@@ -86,75 +89,46 @@ router.post("/registercustomer",
     check("phone_number").isMobilePhone(),
     check("dob").isDate(),
     async (req, res) => {
-        const errors = validationResult(req)
-        if (!errors.isEmpty()) {
-            res.send(errors);
-        } else {
-
-            try {
-                const email = req.body.email.toLowerCase();
-                const password = req.body.password;
-                const name = req.body.fName + " " + req.body.lName;
-                const phone_number = req.body.phone_number;
-                const dob = req.body.dob;
-                var isSuccess = false;
-
-
-                //CHECK EXISTENCE OF MOBILE AND EMAIL IN DATABASE, IF EXISTS RETURN ERROR MESSAGE
-                const checkEmailExistence = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type = $3", [email, enums.is_active.yes, enums.UserType.customer]);
-                const checkMobileExistence = await db.query("SELECT * FROM users WHERE phone_number = $1 AND status = $2 AND user_type = $3 ", [phone_number, enums.is_active.yes, enums.UserType.customer]);
-
-                if (checkEmailExistence.rows.length > 0) {
-                    const user = checkEmailExistence.rows[0];
-                    if (user.email == email) {
-                        res.send(
-                            {
-                                isSuccess: isSuccess,
-                                message: "User with this email is already registered, please login..."
-                            });
-                    }
-                }
-                else if (checkMobileExistence.rows.length > 0) {
-                    const user = checkMobileExistence.rows[0];
-                    if (user.phone_number == mobile) {
-                        res.send({
-                            isSuccess: isSuccess,
-                            message: "User with this phone number is already registered, please login..."
-                        });
-                    }
-                }
-
-                // ELSE INSERT NEW CUSTOMER AND RETURN CUSTOMER ID
-                else {
-                    bcrypt.hash(password, saltRounds, async (err, hash) => {
-                        if (err) {
-                            console.log("Error hashing password", err);
-                            res.send("Error in making request, contact administrator");
-                        } else {
-                            try {
-                                const result = await db.query("INSERT INTO users (email,password,name,phone_number,dob,user_type,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) returning *", [email, hash, name, phone_number, dob, enums.UserType.customer, enums.is_active.yes, moment().format()]);
-                                if (result.rows.length > 0) {
-                                    isSuccess = true;
-                                }
-                                else {
-                                    isSuccess = false;
-                                }
-                                res.status(200).send({
-                                    isSuccess: isSuccess,
-                                    id: result.rows[0].id
-                                });
-                            } catch (error) {
-                                console.log(error);
-                            }
-
-                        }
-                    })
-                }
-            } catch (error) {
-                console.log(error)
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
             }
+
+            const email = req.body.email.toLowerCase();
+            const password = req.body.password;
+            const name = req.body.fName + " " + req.body.lName;
+            const phone_number = req.body.phone_number;
+            const dob = req.body.dob;
+            let isSuccess = false;
+
+            // Check if email or phone number already exist
+            const checkEmailExistence = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type = $3", [email, enums.is_active.yes, enums.UserType.customer]);
+            if (checkEmailExistence.rows.length > 0) {
+                return res.status(409).json({ message: "User with this email is already registered, please login..." });
+            }
+
+            const checkMobileExistence = await db.query("SELECT * FROM users WHERE phone_number = $1 AND status = $2 AND user_type = $3", [phone_number, enums.is_active.yes, enums.UserType.customer]);
+            if (checkMobileExistence.rows.length > 0) {
+                return res.status(409).json({ message: "User with this phone number is already registered, please login..." });
+            }
+
+            // Hash the password
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+            const result = await db.query("INSERT INTO users (email,password,name,phone_number,dob,user_type,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [email, hashedPassword, name, phone_number, dob, enums.UserType.customer, enums.is_active.yes, moment().format()]);
+
+            // Check if insertion was successful
+            if (result.rows.length > 0) {
+                isSuccess = true;
+            }
+
+            res.status(200).json({ isSuccess: isSuccess, id: result.rows[0].id });
+        } catch (error) {
+            console.error("Error registering customer:", error);
+            res.status(500).json({ message: "Error registering customer." });
         }
     });
+
 
 router.post("/customerlogin",
     check("email").isEmail(),
@@ -220,87 +194,109 @@ router.post("/customerlogin",
         }
     });
 
-router.post("/updatepassword", check("password").isLength({ min: 6 }), check("email").isEmail(), async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        // If there are validation errors, render the form again with errors
-        res.send({ errors: errors.array() });
-    } else {
-        const email = req.body.email.toLowerCase();
-        const password = req.body.password;
+router.post("/updatepassword",
+    check("password").isLength({ min: 6 }),
+    check("email").isEmail(),
+    async (req, res) => {
         try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+
+            const email = req.body.email.toLowerCase();
+            const password = req.body.password;
+
             const findUser = await db.query("SELECT email FROM users WHERE email = $1", [email]);
 
             if (findUser.rowCount > 0) {
-                console.log("you in")
-                bcrypt.hash(password, saltRounds, async (err, hash) => {
-                    if (err) {
-                        console.log("Error hashing password", err);
-                        res.send("Error in making request, contact administrator");
-                    } else {
-                        try {
-                            console.log("you are in")
-                            const result = await db.query("UPDATE users SET password = $1,reset_password_timestamp=now() where email = $2 RETURNING *", [hash, email]);
+                // Hash the new password
+                const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-                            if (result.rowCount > 0) {
-                                res.send({ message: "Password Update Succsefull" });
-                            } else {
-                                res.send({ message: "Error updating password" })
-                            }
-                        }
-                        catch (err) {
-                            console.log(err);
-                            res.status(404).send("Error in making request. " + err);
-                        }
-                    }
-                })
+                // Update the password in the database
+                const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
+
+                if (result.rowCount > 0) {
+                    return res.status(200).json({ message: "Password update successful" });
+                } else {
+                    return res.status(500).json({ message: "Error updating password" });
+                }
+            } else {
+                return res.status(404).json({ message: "No user found with the given email address" });
             }
-            else {
-                res.status(200).send("No user found with given email address");
-            }
-        } catch (err) {
-            res.send(err)
+        } catch (error) {
+            console.error("Error updating password:", error);
+            return res.status(500).json({ message: "Error updating password" });
         }
     }
-});
+);
 
-router.get("/getallcategories", authMiddleware, async (req, res) => {
 
-    const dbquery = await db.query("SELECT name, image_path from categories")
-    const categories = [];
+router.get("/getallcategories", async (req, res) => {
+    try {
+        // Fetch categories from the database
+        const dbQuery = await db.query("SELECT id, name, image_path FROM categories");
 
-    for (let index = 0; index < dbquery.rowCount; index++) {
-        const categoryNames = dbquery.rows[index].name;
-        const categoryImage = dbquery.rows[index].image_path;
-        try {
+        // Check if any categories were found
+        if (dbQuery.rowCount === 0) {
+            return res.status(404).json({ success: false, message: "No categories found" });
+        }
+
+        const categories = [];
+        // Iterate through the fetched categories
+        for (const category of dbQuery.rows) {
+            const categoryName = category.name;
+            const categoryImage = category.image_path;
+
+            // Read image file asynchronously
             const filePath = new URL(categoryImage, import.meta.url);
-            const contents = await fs.readFile(filePath);
-            // console.log(contents);  
-            categories.push({ name: categoryNames, image: contents.toString('base64') })
-        } catch (err) {
-            console.log(err.message);
+            const contents = await fs.promises.readFile(filePath, { encoding: 'base64' });
+
+            categories.push({ id: category.id, name: categoryName, image: contents });
         }
 
+        // Send the categories as response
+        return res.json({ success: true, data: categories });
+    } catch (error) {
+        console.error("Error fetching categories:", error.message);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
-    res.send(categories)
-
 });
+
 
 // TODO - Modify Salons in City Endpoint is when city is dynamic
-app.get('/getallsalonsincity', async (req, res) => {
-    const cityId = req.body.city_id;
+router.get('/getallsalonsincity', async (req, res) => {
+    const cityId = req.query.city_id; // Use req.query to access query parameters
 
     try {
-        // Query the branches table to retrieve salon branches in the specified city
-        const salonBranches = await db.query('SELECT * FROM branches WHERE city_id = $1', [cityId]);
+        let query = 'SELECT * FROM branches WHERE city_id = $1 AND status = 1';
+        const queryParams = [cityId];
 
-        // If no salon branches are found in the specified city, return an empty array
-        if (salonBranches.rows.length === 0) {
-            res.json({ success: true, message: 'No salons found in the specified city.', salons: [] });
-            return;
+        // Check for additional filtering parameters and modify the query accordingly
+        let filterOption = req.query.filterOption;
+        if (filterOption) { filterOption = filterOption.toLowerCase(); }
+        if (filterOption) {
+            if (filterOption == "unisex") {
+                query += ' AND type = $2';
+                queryParams.push(enums.salon_type.unisex);
+            }
+            if (filterOption == "womens") {
+                query += ' AND type = $2';
+                queryParams.push(enums.salon_type.womens);
+            }
+            if (filterOption == "mens") {
+                query += ' AND type = $2';
+                queryParams.push(enums.salon_type.mens);
+            }
         }
 
-        // If salon branches are found, return them in the response
+        // Execute the modified query
+        const salonBranches = await db.query(query, queryParams);
+
+        if (salonBranches.rows.length === 0) {
+            return res.json({ success: true, message: 'No salons found in the specified city.', salons: [] });
+        }
+
         res.json({ success: true, salons: salonBranches.rows });
     } catch (error) {
         console.error('Error listing salons:', error);
@@ -308,88 +304,138 @@ app.get('/getallsalonsincity', async (req, res) => {
     }
 });
 
+router.get('/getsalonvacancy', jsonParser,
+    body('branch_id').isInt(),
+    body("appointment_date").isDate(),
+    body('services').isArray(),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.json({
+                success: false,
+                message: "Validation Error Occurred",
+                errors: errors.array(),
+            });
+        }
 
-// router.post("/bookappointment",
-//     check("user_id").isNumeric(),
-//     check("branch_id").isNumeric(),
-//     check("appointment_date").isDate(),
-//     check("start_time").custom(value => {
-//         return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? true : (() => { throw new Error('Value must be in the time format HH:MM') })();
-//     }),
-//     authMiddleware, async (req, res) => {
+        try {
+            const branch_id = req.body.branch_id;
+            const formatedAppointmentDate = moment(req.body.appointment_date, 'YYYY/MM/DD').format("YYYY-MM-DD");
+            const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
 
-//         // TODO continue creating appointment api once creating salon and branch is finished...
-//         // TODO validate seat booking before appointment creation...
-//         // TODO update and set user cart items as inactive 
-//         // TODO 
+            const getBranchHours = await db.query("SELECT start_time, end_time FROM branch_hours WHERE branch_id = $1 AND day =$2 ", [branch_id, weekdayName]);
+            if (getBranchHours.rows.length === 0) {
+                return res.json({
+                    success: false,
+                    message: "Branch is closed on the selected day.",
+                });
+            }
 
-//         const errors = validationResult(req);
-//         if (!errors.isEmpty()) {
-//             return res.status(400).json({ errors: errors.array() });
-//         }
+            let branchStartTime = getBranchHours.rows[0].start_time;
+            let branchEndTime = moment(getBranchHours.rows[0].end_time, 'HH:mm').subtract(30, 'minutes').format('HH:mm');
 
-//         try {
-//             const { user_id, branch_id, appointment_date, start_time, end_time } = req.body;
-//             const status = enums.appointmentType.Pending_Payment_Confirmation;
-//             const seat_number = 2;
-//             const services = req.body.services;
-//             const platform_coupon_id = req.body.platform_coupon_id || 0;
+            const getHolidayHours = await db.query("SELECT * FROM holiday_hours WHERE branch_id = $1 AND $2 >= from_date AND $2 <= to_date AND status = 1", [branch_id, formatedAppointmentDate]);
+            let isHoliday = false;
+            let holidayEndTime = null;
+            if (getHolidayHours.rows.length > 0) {
+                const holidayHours = getHolidayHours.rows;
+                for (const holiday of holidayHours) {
+                    const fromDateTime = moment(holiday.from_date);
+                    const toDateTime = moment(holiday.to_date);
+                    if (moment(formatedAppointmentDate).isBetween(fromDateTime, toDateTime, null, '[]')) {
+                        isHoliday = true;
+                        holidayEndTime = toDateTime.format('HH:mm');
+                        break;
+                    }
+                }
+            }
 
-//             let taxAmount = 0; // TAX AMOUNT
-//             let discountAmount = 0; // DISCOUNT AMOUNT INITALLY SET TO 0
-//             let advance_percentage = 30; // INITIALLY SET TO 30 BELIEVING NO COUPON USED...
-//             if (!isNaN(platform_coupon_id) && parseInt(platform_coupon_id) !== 0) {
-//                 const result = await db.query("SELECT * FROM platform_coupon WHERE id = $1", [platform_coupon_id]);
-//                 if (result.rowCount > 0) {
-//                     discountAmount = result.rows[0].discount_amount;
-//                     advance_percentage = result.rows[0].advance_percentage;
-//                 }
-//             }
+            if (isHoliday) {
+                // Set branch start time to holiday end time
+                branchStartTime = holidayEndTime;
+            }
 
+            let getServiceTotalDuration = 0;
 
-//             await db.query('BEGIN');
+            for (const element of req.body.services) {
+                const service_id = element.service_id;
+                const getServiceDuration = await db.query("SELECT duration FROM services_options WHERE id = $1", [service_id]);
+                const serviceDuration = parseInt(getServiceDuration.rows[0].duration);
+                getServiceTotalDuration += serviceDuration;
+            }
 
-//             let finalTotalDiscount = 0;
-//             let finalTotalTax = 0;
-//             let finalSubtotal = 0;
+            let firstSlotStartTime = branchStartTime;
 
-//             const createAppointment = await db.query("INSERT INTO appointment (user_id, branch_id, appointment_date, subtotal, total_discount, total_tax, net_amount, total_amount_paid, status, start_time, end_time, seat_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id", [user_id, branch_id, appointment_date, 0, 0, 0, 0, 0, status, start_time, end_time, seat_number]);
-//             const appointmentId = createAppointment.rows[0].id;
-//             for (let index = 0; index < services.length; index++) {
+            // Calculate ending slot time by adding total service duration to starting slot time
+            const endingSlotTime = moment(branchStartTime, 'HH:mm').add(getServiceTotalDuration, 'minutes').format('HH:mm');
+            // Define slot interval (e.g., duration of the longest service)
+            const slotInterval = getServiceTotalDuration; // You can adjust this according to your requirements
 
-//                 const getServicePrice = await db.query("SELECT price FROM services_options WHERE id = $1", [services[index]]);
-//                 const servicePrice = getServicePrice.rows[0].price;
-//                 const total_item_discount = discountAmount !== 0 ? servicePrice * (discountAmount / 100) : 0;
-//                 const total_tax = taxAmount !== 0 ? servicePrice * (taxAmount / 100) : 0;
-//                 const total_price_paid = 0;
+            // Initialize array to store slots
+            const slots = [];
 
-//                 await db.query("INSERT INTO appointment_items (appointment_id,service_id,service_price,total_item_discount,total_tax,total_price_paid) VALUES ($1,$2,$3,$4,$5,$6)", [appointmentId, services[index], servicePrice, total_item_discount, total_tax, total_price_paid]);
+            // Generate slots until the adjusted branch end time
+            let currentSlotStartTime = moment(branchStartTime, 'HH:mm'); // Start from the adjusted start time
+            while (currentSlotStartTime.isSameOrBefore(moment(branchEndTime, 'HH:mm'))) {
+                const slotEndTime = currentSlotStartTime.clone().add(slotInterval, 'minutes');
+                slots.push({
+                    start_time: currentSlotStartTime.format('HH:mm'),
+                    end_time: slotEndTime.format('HH:mm')
+                });
+                currentSlotStartTime.add(slotInterval, 'minutes');
+            }
 
-//                 finalSubtotal += servicePrice;
-//                 finalTotalDiscount += total_item_discount;
-//                 finalTotalTax += total_tax;
-//             }
+            const getSalonSeats = await db.query("SELECT seats FROM branches where id=$1", [branch_id]);
+            const seats = getSalonSeats.rows[0].seats;
+            const availableSlots = [];
+            const unavailableSlots = [];
 
+            for (let i = 1; i <= seats; i++) {
+                const seatNo = i;
+                const appointments = await db.query("SELECT start_time, end_time FROM appointment WHERE branch_id = $1 AND seat_number = $2 AND appointment_date = $3", [branch_id, seatNo, formatedAppointmentDate]);
 
-//             const finalNetAmount = (finalSubtotal - finalTotalDiscount) + finalTotalTax;
-//             const updateAppointment = await db.query("UPDATE appointment SET subtotal = $1,total_discount=$2,total_tax=$3,net_amount=$4 WHERE id = $5 RETURNING *", [finalSubtotal, finalTotalDiscount, finalTotalTax, finalNetAmount, appointmentId]);
+                // Check each slot against existing appointments
+                for (const slot of slots) {
+                    let isAvailable = true;
+                    for (const appointment of appointments.rows) {
+                        // Check if slot overlaps with any existing appointment
+                        if (
+                            (moment(slot.start_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
+                            (moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
+                            (moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.end_time, 'HH:mm')))
+                        ) {
+                            isAvailable = false;
+                            break;
+                        }
+                    }
+                    if (isAvailable) {
+                        availableSlots.push(slot);
+                    } else {
+                        unavailableSlots.push(slot);
+                    }
+                }
+            }
 
-//             let advance_amount = (finalNetAmount * advance_percentage) / 100;
-
-//             await db.query('COMMIT');
-//             res.json({ success: true, message: "Appointment booked successfully.", data: updateAppointment.rows[0], advance_amount: advance_amount });
-//         } catch (error) {
-//             await db.query('ROLLBACK');
-//             console.error("Error making request:", error);
-//             res.status(500).json({ success: false, message: "Error making request." });
-//         }
-//     });
+            // Return available and unavailable slots
+            return res.json({
+                success: true,
+                message: "Appointment slots generated successfully.",
+                available_slots: availableSlots,
+                unavailable_slots: unavailableSlots
+            });
+        } catch (error) {
+            console.error("Error generating appointment slots:", error);
+            return res.status(500).json({
+                success: false,
+                message: "Error generating appointment slots."
+            });
+        }
+    });
 
 router.post("/bookappointment",
     check("user_id").isNumeric(),
     check("branch_id").isNumeric(),
-    check("appointment_date").isDate(),
-    check("start_time").custom(value => {
+    check("appointment_date").isDate(), check("start_time").custom(value => {
         return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? true : (() => {
             throw new Error('Value must be in the time format HH:MM');
         })();
@@ -410,8 +456,9 @@ router.post("/bookappointment",
                 user_id,
                 branch_id,
                 appointment_date,
-                start_time
             } = req.body;
+            let start_time = req.body.start_time;
+
             const status = enums.appointmentType.Pending_Payment_Confirmation;
             const services = req.body.services;
             const platform_coupon_id = req.body.platform_coupon_id || 0;
@@ -446,8 +493,7 @@ router.post("/bookappointment",
                 });
             }
 
-            // check if salon is on holiday on the selected day...
-
+            // check if salon is on holiday on the selected day..
             const appointmentDateTime = new Date(`${appointment_date} ${start_time}`);
             const checkHolidayQuery = await db.query("SELECT id FROM holiday_hours WHERE branch_id = $1 AND $2 BETWEEN from_date AND to_date AND status = 1", [branch_id, appointmentDateTime]);
             if (checkHolidayQuery.rowCount > 0) {
@@ -494,7 +540,7 @@ router.post("/bookappointment",
             }
 
             // Format the end time back to HH:mm format
-            endTime = endTime.format('HH:mm');
+            endTime = moment(endTime, "HH:mm").subtract(1, "minutes").format('HH:mm');
 
 
             // Check available seats
@@ -523,6 +569,8 @@ router.post("/bookappointment",
             let finalTotalDiscount = 0;
             let finalTotalTax = 0;
             let finalSubtotal = 0;
+
+            start_time = moment(start_time, 'HH:mm').add(1, 'minutes').format('HH:mm');
 
             const createAppointment = await db.query("INSERT INTO appointment (user_id, branch_id, appointment_date, subtotal, total_discount, total_tax, net_amount, total_amount_paid, status, start_time, end_time, seat_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id", [user_id, branch_id, appointment_date, 0, 0, 0, 0, 0, status, start_time, endTime, availableSeat]);
             const appointmentId = createAppointment.rows[0].id;
@@ -565,11 +613,8 @@ router.post("/bookappointment",
         }
     });
 
-
-
-
-
-router.post("/confirm-appointment",
+// FIXME Maybe in this route we need to get the current total_price_paid from the tables and add it to the new payment amount... , also deicde when to add payment details in payment table whether in this route or payment route
+router.put("/confirm-appointment",
     check('appointment_id').isInt(),
     check('paid_amount').isFloat(), async (req, res) => {
 
@@ -582,42 +627,56 @@ router.post("/confirm-appointment",
         try {
             const appointment_id = req.body.appointment_id;
             const paid_amount = req.body.paid_amount;
-            await db.query("BEGIN")
-            // Update total_amount_paid in the appointment table
-            const updateAppointment = await db.query("UPDATE appointment SET total_amount_paid = $1 WHERE id = $2", [paid_amount, appointment_id]);
-            if (updateAppointment.rowCount > 0) {
-                // Get appointment items
-                const getAppointmentItems = await db.query("SELECT * from appointment_items WHERE appointment_id = $1", [appointment_id]);
-                if (getAppointmentItems.rowCount > 0) {
-                    const appointmentItems = getAppointmentItems.rows;
 
-                    // Calculate the total price of all items
-                    let totalPrice = 0;
+            // Start a database transaction
+            await db.query("BEGIN");
 
-                    for (let index = 0; index < appointmentItems.length; index++) {
-                        totalPrice += appointmentItems[index].service_price;
-                    }
+            // Fetch the existing total_amount_paid from the database
+            const getAppointment = await db.query("SELECT total_amount_paid FROM appointment WHERE id = $1", [appointment_id]);
 
-                    // Update each appointment item with the paid amount
-                    for (const item of appointmentItems) {
-                        const paidPrice = item.service_price * (paid_amount / totalPrice);
-                        const updateItem = await db.query("UPDATE appointment_items SET total_price_paid = $1 WHERE id = $2", [paidPrice, item.id]);
-                    }
-                    await db.query("COMMIT")
-                    res.status(200).json({ success: true, message: "Appointment confirmed and items marked as paid." });
-                } else {
-                    res.status(404).json({ success: false, message: "Appointment items not found." });
-                }
-            } else {
-                res.status(404).json({ success: false, message: "Appointment not found." });
+            if (getAppointment.rowCount === 0) {
+                await db.query('ROLLBACK');
+                return res.status(404).json({ success: false, message: "Appointment not found." });
             }
+
+            const existingPaidAmount = getAppointment.rows[0].total_amount_paid;
+
+            // Calculate the new total_amount_paid
+            const newTotalPaidAmount = existingPaidAmount + paid_amount;
+
+            // Update total_amount_paid in the appointment table
+            const updateAppointment = await db.query("UPDATE appointment SET total_amount_paid = $1 WHERE id = $2", [newTotalPaidAmount, appointment_id]);
+
+            if (updateAppointment.rowCount === 0) {
+                await db.query('ROLLBACK');
+                return res.status(404).json({ success: false, message: "Appointment not found." });
+            }
+
+            // Fetch the service items associated with the appointment
+            const getServiceItems = await db.query("SELECT * FROM appointment_items WHERE appointment_id = $1", [appointment_id]);
+
+            if (getServiceItems.rowCount > 0) {
+                const serviceItems = getServiceItems.rows;
+
+                // Calculate the new total_price_paid for each service item
+                for (const item of serviceItems) {
+                    const newTotalPricePaid = item.service_price * (paid_amount / existingPaidAmount);
+                    // Update total_price_paid for each service item
+                    await db.query("UPDATE appointment_items SET total_price_paid = $1 WHERE id = $2", [newTotalPricePaid, item.id]);
+                }
+            }
+
+            // Commit the transaction
+            await db.query("COMMIT");
+
+            return res.status(200).json({ success: true, message: "Appointment confirmed and total amount paid updated." });
         } catch (error) {
+            // Rollback the transaction in case of an error
             await db.query('ROLLBACK');
             console.error("Error making request:", error);
-            res.status(500).json({ success: false, message: "Error making request." });
+            return res.status(500).json({ success: false, message: "Error making request." });
         }
     });
-
 
 
 
@@ -771,7 +830,6 @@ router.delete("/remove-from-cart",
         }
     });
 
-
 router.delete('/cartdeleteall',
     check('userId').isInt(),
     authMiddleware,
@@ -849,72 +907,70 @@ router.get("/getcartcount",
 
     });
 
-
 // router.get("/getsalonsbyfilter",)
 // router.get("/searchservices",)
 // router.get("/searchsalons",)
 // router.get("/getsalondetails",)
 
-router.get('/getSalonServices', authMiddleware, check("salonId").isNumeric(), async (req, res) => {
+router.get('/getsalonservices', check("id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        // If there are validation errors, render the form again with errors
-        res.send({ errors: errors.array() });
-    } else {
-        try {
-            const { salonId } = req.query;
-            // Query to fetch services offered by the specified salon
-            const result = await db.query(`
-            SELECT s.service_id, s.service_name,s.price,s.duration,s.is_active, v.variant_id, v.name AS variant_name, v.price AS variant_price
-            FROM public.service s
-            LEFT JOIN public.service_variant v ON s.service_id = v.service_id
-            WHERE s.salon_id = $1
-            ORDER BY s.service_id, v.variant_id;
-        `, [salonId]);
+        return res.send({ errors: errors.array() });
+    }
+    try {
+        const branch_id = req.query.id;
+        const departmentsQuery = await db.query("SELECT * FROM department");
+        const departments = {};
 
-            const rows = result.rows;
-            // Execute query
-            // const { rows } = await pool.query(query, [salonId]);
+        // Iterate over departments
+        for (const department of departmentsQuery.rows) {
+            const departmentName = department.name;
+            departments[departmentName] = {};
 
-            // Organize data into a structured format
-            const services = [];
-            let currentService = null;
+            // Get services for the current department
+            const servicesQuery = await db.query("SELECT * FROM services WHERE branch_id = $1 AND department = $2 AND status = $3", [branch_id, department.id, enums.is_active.yes]);
 
-            // Loop through the rows returned by the query
-            for (const row of rows) {
-                // Check if this row is for a new service
-                if (!currentService || currentService.service_id !== row.service_id) {
-                    // If so, create a new service object
-                    currentService = {
-                        service_id: row.service_id,
-                        service_name: row.service_name,
-                        service_price: row.price,
-                        service_duration: row.duration,
-                        is_active: row.is_active,
-                        variants: [],
-                    };
-                    // Push the new service object into the services array
-                    services.push(currentService);
+            // Iterate over services for the current department
+            for (const service of servicesQuery.rows) {
+                const categoryId = service.category_id;
+
+                // Get category name for the current service
+                const categoryQuery = await db.query("SELECT name FROM categories WHERE id = $1", [categoryId]);
+                const categoryName = categoryQuery.rows[0].name;
+
+                // Get service options for the current service
+                const serviceOptionsQuery = await db.query("SELECT * FROM services_options WHERE service_id = $1 AND status = $2", [service.id, enums.is_active.yes]);
+                const serviceOptions = serviceOptionsQuery.rows;
+
+                // Skip adding service if it doesn't have any service options
+                if (serviceOptions.length === 0) {
+                    continue;
                 }
 
-                // If the row has variant data, add it to the current service's variants array
-                if (row.variant_id) {
-                    currentService.variants.push({
-                        variant_id: row.variant_id,
-                        variant_name: row.variant_name,
-                        variant_price: row.variant_price,
-                    });
+                // Initialize the category if it doesn't exist
+                if (!departments[departmentName][categoryName]) {
+                    departments[departmentName][categoryName] = [];
                 }
+
+                // Add service with its options to the category
+                departments[departmentName][categoryName].push({
+                    service_id: service.id,
+                    service_name: service.name,
+                    service_options: serviceOptions
+                });
             }
-
-            // Send the structured data as the API response
-            res.json({ services });
-        } catch (error) {
-            console.error('Error fetching services:', error);
-            res.status(500).json({ error: 'Internal server error' });
         }
+
+        res.json({ success: true, departments: departments });
+    } catch (error) {
+        console.error('Error fetching services:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
+
+
+
+
 
 // router.get("/getsalonoffers",)
 // router.get("/checkcurrentcartstatus",)
@@ -931,26 +987,28 @@ router.get('/getSalonServices', authMiddleware, check("salonId").isNumeric(), as
 // router.get("/getwishlisteditems",)
 
 
-router.get("/getsalonwithid", authMiddleware, async (req, res) => {
-    var id = parseInt(req.query.salonId);
+router.get('/getbranchwithid', check("id").isInt(), async (req, res) => {
+    // Check for validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation Error Occurred", errors: errors.array() });
+    }
+
+    const branch_id = req.query.id;
+
     try {
-        const result = await db.query("SELECT * from salon where salon_id=$1", [id]);
-        if (result.rowCount > 0) {
-            const data = {
-                salon_name: result.rows[0].salon_name,
-                location: result.rows[0].location,
-                contact_number: result.rows[0].contact_number,
-                description: result.rows[0].description,
-                is_active: result.rows[0].is_active,
-                email: result.rows[0].email,
-                salon_id: result.rows[0].salon_id,
-            }
-            res.send(data);
-        } else {
-            res.send({ message: "No Salon Found" });
+        const result = await db.query("SELECT * FROM branches WHERE id = $1", [branch_id]);
+        // Check if a branch with the specified ID exists
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Branch not found." });
         }
+        res.status(200).json({
+            success: true,
+            data: result.rows[0] // Access the first row directly
+        });
     } catch (error) {
-        console.log(error)
+        console.error("Error fetching branch:", error);
+        res.status(500).json({ success: false, message: "Error fetching branch." });
     }
 });
 

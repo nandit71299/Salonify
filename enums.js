@@ -32,4 +32,9 @@ const advance_payment_amount_type = {
     fixed: 2
 }
 
-export { EmployeeType, UserType, is_active, appointmentType };
+const salon_type = {
+    unisex: 1,
+    mens: 2,
+    womens: 3
+}
+export { EmployeeType, UserType, is_active, appointmentType, salon_type };

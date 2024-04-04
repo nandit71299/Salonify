@@ -1,13 +1,12 @@
 import express from "express";
 import bodyParser from "body-parser";
-// import customerRoutes from "./routes/customerRoutes.js"
-// import salonRoutes from "./routes/salonRoutes.js"
-// import paymentRoutes from "./routes/paymentRoutes.js"
-// import appointmentRoutes from "./routes/appointmentRoutes.js";
-// import serviceRoutes from "./routes/serviceRoutes.js";
 import salonowners from "./routes/salonowners.js";
 import salonifycustomers from "./routes/salonifycustomers.js"
 import dotenv from "dotenv";
+import db from "./database.js";
+import { fileURLToPath } from 'url';
+
+
 
 dotenv.config();
 export const app = express();
@@ -38,7 +37,18 @@ app.use('/api/owners', salonowners);
 
 app.use('/api/customers', salonifycustomers);
 
+app.post("/createCategories", async (req, res) => {
+    const name = req.body.name;
+    const imagePath = req.body.imagePath;
+    try {
+        const insertCategory = await db.query("INSERT INTO categories (name,image_path) VALUES ($1,$2) RETURNING id", [name, imagePath]);
+        res.json(insertCategory.rows[0].id);
+    }
+    catch (err) {
+        console.log(err);
+    }
 
+})
 
 
 

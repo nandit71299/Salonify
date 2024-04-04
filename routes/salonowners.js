@@ -1,6 +1,6 @@
 import express, { application } from "express";
 import bodyParser from "body-parser";
-import db from "../db.js";
+import db from "../database.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import authMiddleware from '../middleware/authMiddleware.js';
@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 import * as enums from "../enums.js"
 import { fileURLToPath } from 'url';
 import path, { parse } from 'path';
-import fs from 'fs/promises';
+import fs from 'fs';
 
 const router = express.Router();
 const saltRounds = Number(process.env.saltrounds);
@@ -39,95 +39,64 @@ router.post("/registersalon",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            res.send(errors);
+            return res.status(400).json({ success: false, errors: errors.array() });
         }
-        else {
-            // User Details  
-            const email = req.body.email.toLowerCase();
-            const password = req.body.password;
-            const personalName = req.body.name;
-            const personalPhone = req.body.personalPhone;
-            const dob = req.body.dob;
 
-            // Salon Details
-            const salon_name = req.body.salon_name;
-            const contact_number = req.body.contact_number;
-            const salonDescription = req.body.description;
-            const location = req.body.location;
+        const {
+            email,
+            password,
+            personalName,
+            personalPhone,
+            dob,
+            salon_name,
+            contact_number,
+            salonDescription,
+            location,
+            address,
+            type,
+            seats,
+            image,
+            city_id,
+            latitude,
+            longitude
+        } = req.body;
 
-            //Branch Details
-            const name = salon_name;
-            //TODO change city_id and make it dynamic later...
-            const city_id = 1;
-            const address = req.body.address;
-            const salon_type = req.body.type;
-            //TODO change latitude, longitude and make it dynamic later...
-            const latitude = 111;
-            const longitude = 111;
-            const seats = req.body.seats;
-            const image = req.body.image;
+        const filePath = path.join(process.cwd(), '/public/salonimages/', salon_name + ".png");
 
-            const fileName = salon_name; // File name to save
-            const filePath = path.join(process.cwd(), '/public/salonimages/', salon_name + ".png"); // Path to save the image file
+        try {
+            const [emailExistence, phoneExistence] = await Promise.all([
+                db.query("SELECT email FROM users WHERE email = $1", [email]),
+                db.query("SELECT phone_number FROM users WHERE phone_number = $1", [personalPhone])
+            ]);
 
-            try {
-                const checkEmailExistence = await db.query("SELECT email FROM users WHERE email = $1", [email]);
-                const checkPhoneExistence = await db.query("SELECT phone_number FROM users WHERE phone_number = $1", [personalPhone]);
-                if (checkPhoneExistence.rowCount > 0) {
-                    res.send({ success: false, message: "A user is already registered with this phone number" });
-                } else {
-                    if (checkEmailExistence.rowCount > 0) {
-                        res.send({ success: false, message: "A user is already registered with this email address." });
-                    }
-                    else {
-                        bcrypt.hash(password, saltRounds, async (err, hash) => {
-                            if (err) {
-                                console.log("Error hashing password", err);
-                                res.send({ success: false, message: "Error in making request, contact administrator" });
-                            } else {
-
-                                try {
-
-                                    const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
-
-                                    // Create buffer from base64 data
-                                    const imageBuffer = Buffer.from(base64Data, 'base64');
-
-                                    // Write buffer to file
-                                    await fs.writeFile(filePath, imageBuffer, (err) => {
-                                        if (err) {
-                                            console.error('Error saving image:', err);
-                                            res.status(500).json({ success: false, message: 'Error saving image.' });
-                                            return;
-                                        }
-                                    });
-
-                                    await db.query("BEGIN");
-                                    const registerUser = await db.query("INSERT INTO users (email,password,name,phone_number,dob,user_type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id;", [email, hash, personalName, personalPhone, dob, enums.UserType.salon_admin]);
-                                    const registerSalon = await db.query("INSERT INTO saloon (user_id,saloon_name,contact_number,description) VALUES ($1,$2,$3,$4) RETURNING id;", [registerUser.rows[0].id, salon_name, contact_number, salonDescription]);
-                                    const registerBranch = await db.query("INSERT INTO branches (saloon_id,name,city_id,address,type,latitude,seats,longitude) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [registerSalon.rows[0].id, name, city_id, address, salon_type, latitude, seats, longitude]);
-                                    await db.query("COMMIT");
-                                    res.send({
-                                        success: true,
-                                        message: "Salon registered succesfully."
-                                    });
-                                } catch (error) {
-                                    await db.query("ROLLBACK");
-                                    res.send({ error: error, message: "Could not complete the request." })
-                                };
-                            }
-                        });
-
-
-                    }
-                }
-            } catch (error) {
-                res.status(404).send({ success: false, message: "Error Registering Salon...", error: error });
+            if (emailExistence.rowCount > 0) {
+                return res.status(400).json({ success: false, message: "A user is already registered with this email address." });
             }
+
+            if (phoneExistence.rowCount > 0) {
+                return res.status(400).json({ success: false, message: "A user is already registered with this phone number." });
+            }
+
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+            const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+
+            await fs.promises.writeFile(filePath, imageBuffer);
+
+            await db.query("BEGIN");
+
+            const registerUser = await db.query("INSERT INTO users (email,password,name,phone_number,dob,user_type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id;", [email, hashedPassword, personalName, personalPhone, dob, enums.UserType.salon_admin]);
+            const registerSalon = await db.query("INSERT INTO saloon (user_id,saloon_name,contact_number,description) VALUES ($1,$2,$3,$4) RETURNING id;", [registerUser.rows[0].id, salon_name, contact_number, salonDescription]);
+            const registerBranch = await db.query("INSERT INTO branches (saloon_id,name,city_id,address,type,latitude,seats,longitude) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [registerSalon.rows[0].id, salon_name, city_id, address, type, latitude, seats, longitude]);
+
+            await db.query("COMMIT");
+
+            return res.status(200).json({ success: true, message: "Salon registered successfully." });
+        } catch (error) {
+            await db.query("ROLLBACK");
+            console.error("Error registering salon:", error);
+            return res.status(500).json({ success: false, message: "Error registering salon." });
         }
-
-
-
     });
 
 
@@ -200,7 +169,6 @@ router.get("/initializepayment", authMiddleware, async (req, res) => {
     res.send("You are in")
 })
 
-
 router.post('/store-hours', jsonParser, [
     body('[0].branch_id').isNumeric().withMessage('Branch ID must be an integer'),
     body().isArray().withMessage('Store hours data must be an array'),
@@ -261,7 +229,8 @@ router.post('/store-hours', jsonParser, [
             }
 
             // Iterate over days and add data to storeHoursData array
-            for (const [day, { start_time, end_time, status }] of Object.entries(item)) {
+            for (let [day, { start_time, end_time, status }] of Object.entries(item)) {
+                day = day.toLowerCase()
                 storeHoursData.push({
                     branch_id,
                     day,
@@ -475,6 +444,7 @@ router.post("/services",
     body("service_options.*.price").isInt(),
     body("service_options.*.description").isString(),
     body("service_options.*.duration").isInt(),
+    authMiddleware,
     async (req, res) => {
         // res.send(req.body.service_name)
         const errors = validationResult(req);
@@ -488,9 +458,10 @@ router.post("/services",
             const branch_id = jsonData.branch_id;
             const category_id = jsonData.category_id;
             const description = jsonData.description;
+            let department = jsonData.department;
             // Using forEach method to iterate over service options
             await db.query("BEGIN");
-            const insertService = await db.query("INSERT INTO services (name,branch_id,category_id,description) VALUES ($1,$2,$3,$4) RETURNING id", [service_name, branch_id, category_id, description]);
+            const insertService = await db.query("INSERT INTO services (name,branch_id,category_id,description,department) VALUES ($1,$2,$3,$4,$5) RETURNING id", [service_name, branch_id, category_id, description, department]);
             const service_id = insertService.rows[0].id;
 
             for (let i = 0; i < jsonData.service_options.length; i++) {
@@ -516,6 +487,158 @@ router.post("/services",
         catch (err) {
             await db.query("ROLLBACK")
             res.json(err);
+        }
+    }
+);
+
+router.put("/services",
+    jsonParser,
+    body().isObject(),
+    body('service_id').isInt(),
+    body("service_name").optional().isString(),
+    body("branch_id").optional().isInt(),
+    body("category_id").optional().isInt(),
+    body("description").optional().isString(),
+    body("additional_information").optional().isArray(),
+    body("additional_information.*.title").optional().isString(),
+    body("additional_information.*.description").optional().isString(),
+    body("service_options").optional().isArray(),
+    body("service_options.*.name").optional().isString(),
+    body("service_options.*.discount").optional().isInt(),
+    body("service_options.*.price").optional().isInt(),
+    body("service_options.*.description").optional().isString(),
+    body("service_options.*.duration").optional().isInt(),
+    authMiddleware,
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, message: "Validation Error Occurred", errors: errors.array() });
+        }
+
+        const serviceId = req.body.service_id;
+        const jsonData = req.body;
+        try {
+            await db.query("BEGIN");
+
+            if (Object.keys(jsonData).length === 0) {
+                return res.status(400).json({ success: false, message: "No data provided for updating service." });
+            }
+
+            // Check if the provided service_id exists
+            const checkServiceExists = await db.query("SELECT id FROM services WHERE id = $1", [serviceId]);
+            if (checkServiceExists.rows.length === 0) {
+                return res.status(404).json({ success: false, message: "Service not found." });
+            }
+
+            // Update service details
+            const updateServiceValues = [];
+            const updateServiceQuery = [];
+            if (jsonData.service_name) {
+                updateServiceValues.push(jsonData.service_name);
+                updateServiceQuery.push("name = $1");
+            }
+            if (jsonData.category_id) {
+                updateServiceValues.push(jsonData.category_id);
+                updateServiceQuery.push("category_id = $2");
+            }
+            if (jsonData.description) {
+                updateServiceValues.push(jsonData.description);
+                updateServiceQuery.push("description = $3");
+            }
+            if (updateServiceValues.length > 0) {
+                updateServiceValues.push(serviceId);
+                const updateQuery = await db.query(`UPDATE services SET ${updateServiceQuery.join(',')}, updated_at = now() WHERE id = $${updateServiceValues.length} RETURNING *`, updateServiceValues);
+            }
+
+            // Update or insert service options
+            if (jsonData.service_options && jsonData.service_options.length > 0) {
+                for (const option of jsonData.service_options) {
+                    if ('id' in option) {
+                        // If service option ID is provided, update existing option
+                        const updateQuery = await db.query("UPDATE services_options SET name = $1, discount = $2, price = $3, description = $4, duration = $5, updated_at = now() WHERE id = $6 RETURNING *", [option.name, option.discount, option.price, option.description, option.duration, option.id]);
+                    } else {
+                        // If service option ID is not provided, insert new option
+                        const insertQuery = await db.query("INSERT INTO services_options (service_id, name, discount, price, description, duration) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *", [serviceId, option.name, option.discount, option.price, option.description, option.duration]);
+                        console.log(insertQuery.rows[0]);
+                    }
+                }
+            }
+
+            // Update or insert additional information
+            if (jsonData.additional_information && jsonData.additional_information.length > 0) {
+                for (const element of jsonData.additional_information) {
+                    if ('id' in element) {
+                        const checkExistence = await db.query("SELECT id FROM additional_information WHERE id = $1", [element.id]);
+                        // If additional information ID is provided, update existing information
+                        if (checkExistence.rowCount > 0) {
+                            await db.query("UPDATE additional_information SET title = $1, description = $2, updated_at = now() WHERE id = $3", [element.title, element.description, element.id]);
+                        }
+                        else {
+                            return res.json({ success: false, message: `Additional Information with ID ${element.id} not found.` });
+                        }
+                    } else {
+                        // If additional information ID is not provided, insert new information
+                        await db.query("INSERT INTO additional_information (title, description, service_id) VALUES ($1, $2, $3)", [element.title, element.description, serviceId]);
+                    }
+                }
+            }
+
+            await db.query("COMMIT");
+            return res.status(200).json({ success: true, message: "Service updated successfully." });
+        } catch (error) {
+            await db.query("ROLLBACK");
+            console.error("Error updating service:", error);
+            return res.status(500).json({ success: false, message: "Error updating service." });
+        }
+    }
+);
+
+router.delete("/services",
+    jsonParser,
+    body().isObject(),
+    body("service_ids").isArray(),
+    body("service_ids.*").isInt(),
+    authMiddleware,
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, message: "Validation Error Occurred", errors: errors.array() });
+        }
+
+        const serviceIds = req.body.service_ids;
+        try {
+            await db.query("BEGIN");
+
+            if (serviceIds.length === 0) {
+                return res.status(400).json({ success: false, message: "No service IDs provided for deletion." });
+            }
+
+            // Check if the provided service IDs exist
+            const checkServiceExistsQuery = await db.query("SELECT id FROM services WHERE id = ANY($1)", [serviceIds]);
+            const existingServiceIds = checkServiceExistsQuery.rows.map(row => row.id);
+
+            // Filter out non-existing service IDs
+            const nonExistingServiceIds = serviceIds.filter(id => !existingServiceIds.includes(id));
+
+            if (nonExistingServiceIds.length > 0) {
+                return res.status(404).json({ success: false, message: `Services with IDs ${nonExistingServiceIds.join(', ')} not found.` });
+            }
+
+            // Update the status of services to 0 (inactive)
+            const updateStatusQuery = await db.query("UPDATE services SET status = 0 WHERE id = ANY($1)", [serviceIds]);
+
+            const updateOptionsStatusQuery = await db.query("UPDATE services_options SET status = 0 WHERE service_id = ANY($1)", [serviceIds]);
+
+            // Update the status of associated additional information to 0 (inactive)
+            const updateInfoStatusQuery = await db.query("UPDATE additional_information SET status = 0 WHERE service_id = ANY($1)", [serviceIds]);
+
+
+            await db.query("COMMIT");
+            return res.status(200).json({ success: true, message: "Services deleted successfully." });
+        } catch (error) {
+            await db.query("ROLLBACK");
+            console.error("Error deactivating services:", error);
+            return res.status(500).json({ success: false, message: "Error deleting services." });
         }
     }
 );
