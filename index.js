@@ -1,16 +1,11 @@
 import express from "express";
 import bodyParser from "body-parser";
-import pg from "pg";
-import axios from "axios";
-import bcrypt from "bcrypt";
-import customerRoutes from "./routes/customerRoutes.js"
-import salonRoutes from "./routes/salonRoutes.js"
-import paymentRoutes from "./routes/paymentRoutes.js"
-import appointmentRoutes from "./routes/appointmentRoutes.js";
-import serviceRoutes from "./routes/serviceRoutes.js";
-import jwt from "jsonwebtoken";
-import authMiddleware from './middleware/authMiddleware.js';
+import salonowners from "./routes/salonowners.js";
+import salonifycustomers from "./routes/salonifycustomers.js"
 import dotenv from "dotenv";
+import db from "./database.js";
+import { fileURLToPath } from 'url';
+
 
 
 dotenv.config();
@@ -19,57 +14,48 @@ const port = process.env.port;
 
 
 
-app.use(bodyParser.urlencoded({extended: true,}));
-
-// DATABASE CONNECTION
-export const db =  new pg.Client({
-  database : process.env.database,
-  user : process.env.dbuser,
-  password:process.env.dbpassword,
-  host:process.env.dbhost,
-  port:process.env.dbport,
-})
-
-
-db.connect();
+app.use(bodyParser.urlencoded({ extended: true, }));
 
 // Index Route
-app.get("/",(req,res)=>{
-res.render("index.ejs")
+app.get("/", (req, res) => {
+    res.render("index.ejs")
 })
-app.get("/api/getalllocations",authMiddleware,async (req,res)=>{
+
+
+// app.use('/api/customer/', customerRoutes);
+
+// app.use('/api/salon', salonRoutes);
+
+// app.use('/api/appointment',appointmentRoutes);
+
+// app.use('/api/payment',paymentRoutes);
+
+// app.use('/api/services',serviceRoutes);
+
+
+app.use('/api/owners', salonowners);
+
+app.use('/api/customers', salonifycustomers);
+
+app.post("/createCategories", async (req, res) => {
+    const name = req.body.name;
+    const imagePath = req.body.imagePath;
     try {
-        const result = await db.query("SELECT * from all_cities");
-        res.send(result.rows);
-    } catch (error) {
-        res.send(error)
+        const insertCategory = await db.query("INSERT INTO categories (name,image_path) VALUES ($1,$2) RETURNING id", [name, imagePath]);
+        res.json(insertCategory.rows[0].id);
     }
+    catch (err) {
+        console.log(err);
+    }
+
 })
 
-app.use('/api/customer', customerRoutes);
-
-app.use('/api/salons', salonRoutes);
-
-app.use('/api/appointment',appointmentRoutes);
-
-app.use('/api/payment',paymentRoutes);
-
-app.use('/api/services',serviceRoutes);
 
 
 
 
 
 
-
-
-
-
-// app.get("/getallratings",(req,res)=>{
-//     var id = parseInt(req.query.id)-1;
-//     res.send(payments[id])    
-// })
-
-app.listen(port,()=>
-    console.log("Server is running on port" + port )
+app.listen(port, () =>
+    console.log("Server is running on port" + port)
 )

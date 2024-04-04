@@ -118,7 +118,7 @@ async (req,res)=>{
 
 
 
-router.get("/getappointmentwithid",async (req,res)=>{
+router.get("/getappointmentwithid",authMiddleware,async (req,res)=>{
     var id = parseInt(req.query.id);
     try {
         const result = await db.query("SELECT * from appointment where appointment_id=$1",[id]);
@@ -127,5 +127,7 @@ router.get("/getappointmentwithid",async (req,res)=>{
     console.log(error)    
     }
 })
+
+
 
 export default router;
