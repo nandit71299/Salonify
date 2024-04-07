@@ -17,9 +17,9 @@ const is_active = {
 const appointmentType = {
     Pending_Payment_Confirmation: 1,
     Confirmed: 2,
-    Partially_Paid: 3,
-    Closed: 4,
-
+    Closed: 3,
+    Cancelled: 4,
+    NoShow: 5,
 }
 
 const advance_payment_type = {
@@ -37,4 +37,10 @@ const salon_type = {
     mens: 2,
     womens: 3
 }
-export { EmployeeType, UserType, is_active, appointmentType, salon_type };
+
+const wishlist_type = {
+    service: 1,
+    branch: 2
+}
+
+export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type };

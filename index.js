@@ -5,7 +5,7 @@ import salonifycustomers from "./routes/salonifycustomers.js"
 import dotenv from "dotenv";
 import db from "./database.js";
 import { fileURLToPath } from 'url';
-
+import { updateExpiredAppointmentsStatus } from "./scheduler.js";
 
 
 dotenv.config();
