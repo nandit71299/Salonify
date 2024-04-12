@@ -43,4 +43,10 @@ const wishlist_type = {
     branch: 2
 }
 
-export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type };
+const payment_status = {
+    succesfull: 1,
+    failed: 2,
+    refunded: 3
+}
+
+export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type, payment_status };

@@ -1,4 +1,4 @@
-import express, { application } from "express";
+import express, { application, response } from "express";
 import bodyParser from "body-parser";
 import db from "../database.js";
 import bcrypt from "bcrypt";
@@ -15,13 +15,25 @@ import fs from 'fs';
 
 const router = express.Router();
 const saltRounds = Number(process.env.saltrounds);
+const SecretKey = process.env.SecretKey;
+
 
 var jsonParser = bodyParser.json();
 
+let transporter =
+    nodemailer.createTransport(
+        {
+            service: 'gmail',
+            auth: {
+                user: 'nanditsareria@gmail.com',
+                pass: `${process.env.mailPass}`,
+            }
+        }
+    );
 
-router.get("/testsalonownerroute", (req, res) => {
-    res.send("Test Succesfull");
-})
+
+router.get("/testsalonownerroute", async (req, res) => {
+});
 
 router.post("/registersalon",
     check("email").trim().isEmail(),
@@ -100,70 +112,308 @@ router.post("/registersalon",
     });
 
 
-router.post("/login", async (req, res) => {
-    check("email").isEmail(),
-        check("password").not().isEmpty(), async (req, res) => {
+router.post("/login", check("email").isEmail(), check("password").not().isEmpty(), async (req, res) => {
 
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validaton Error Occured",
+            errors: errors.array()
+        })
+    }
+    const { email, password } = req.body;
+
+    try {
+        const result = await db.query(`SELECT * FROM "users" WHERE "email" = $1 AND status = $2 AND user_type = $3`, [email.toLowerCase(), enums.is_active.yes, enums.UserType.salon_admin]);
+
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: "No user found with the given email address." });
+        }
+
+
+        const user = result.rows[0];
+        const getBranchDetails = await db.query('select * from branches where saloon_id = (select id from saloon where user_id = $1)', [user.id]);
+        bcrypt.compare(password, user.password, (err, passwordMatch) => {
+            if (err || !passwordMatch) {
+                return res.status(401).json({ success: false, message: "Invalid email or password." });
+            }
+            const token = jwt.sign({ user }, SecretKey, { expiresIn: '1h' });
+            return res.json({ success: true, token, id: user.id, branch_id: getBranchDetails.rows[0].id });
+        });
+    } catch (error) {
+        console.error("Error in login:", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
+    }
+});
+
+router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.send(errors);
+
+        const email = req.body.email.toLowerCase();
+        const findOwner = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type=$3", [email, enums.is_active.yes, enums.UserType.salon_admin]);
+
+        if (findOwner.rowCount > 0) {
+            const OTP = Math.floor(Math.random().toPrecision() * 100000);
+            const customer_id = findOwner.rows[0].id;
+
+            // Update OTP and other details in parallel
+            const [updateResult, sendMailResult] = await Promise.all([
+                db.query("UPDATE users SET OTP=$1, otp_validity=20, reset_password_timestamp = now() WHERE id =$2 RETURNING *", [OTP, customer_id]),
+                transporter.sendMail({
+                    from: "Salonify",
+                    to: "nanditsareria@gmail.com",
+                    subject: "Salonify: OTP to Reset your password",
+                    html: `Hello, ${email}<br>Please use below mentioned OTP to reset your password.<br><h1>${OTP}</h1>`
+                })
+            ]);
+
+            return res.send({
+                message: "OTP Sent to Registered mail address.",
+                otp: updateResult.rows[0].otp
+            });
+        } else {
+            return res.send("OTP sent to Registered mail address.");
+        }
+    } catch (error) {
+        return res.send(error);
+    }
+});
+
+router.post("/updatepassword",
+    check("password").isLength({ min: 6 }),
+    check("email").isEmail(),
+    async (req, res) => {
+        try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                res.send(errors);
-            } else {
+                return res.status(400).json({ errors: errors.array() });
+            }
 
-                try {
-                    const email = req.body.email.toLowerCase();
-                    const password = req.body.password;
-                    var success = false;
-                    // CHECK IF USER EMAIL EXISTS IN THE DATABASE
-                    const result = await db.query(`SELECT * FROM "users" where "email" = $1 AND status=$2 AND user_type = $3`, [email, enums.is_active.yes, enums.UserType.salon_admin]);
+            const email = req.body.email.toLowerCase();
+            const password = req.body.password;
 
-                    // IF EXISTS COMPARE PASSWORD
-                    if (result.rowCount > 0) {
-                        const user = result.rows[0];
-                        try {
-                            bcrypt.compare(password, user.password, async (err, result) => {
-                                if (err) {
-                                    res.send(err)
-                                } else {
-                                    // IF PASSWORD MATCHES RETURN CUSTOMER DATA AND UPDATE LAST LOGIN TIMESTAMP AND IP ADDRESS
-                                    if (result) {
-                                        success = true;
-                                        // const result = await db.query("UPDATE users SET last_login_ip = $1,  last_login_timestamp = now()  WHERE customer_id = $2 returning *",[req.socket.remoteAddress,user.customer_id])
-                                        const token = jwt.sign({ user }, SecretKey, { expiresIn: '1h' });
-                                        res.send({
-                                            success: success,
-                                            // data:result.rows[0],
-                                            token
-                                        })
-                                    } else {
-                                        res.send({
-                                            success: success,
-                                        })
-                                    }
-                                }
-                            })
-                        } catch (error) {
-                            res.send({
-                                message: error,
-                                error: "Error in making request"
-                            })
-                        }
-                    }
-                    // IF USER NOT FOUND RETURN ERROR
-                    else {
-                        res.send({
-                            isSuccess: success,
-                            message: "No user found with the given email address."
-                        })
-                    }
-                } catch (error) {
-                    res.send({
-                        message: error,
-                        error: "Error in making request"
-                    })
+            const findUser = await db.query("SELECT email FROM users WHERE email = $1 AND user_type = $2 AND status = $3", [email, enums.UserType.salon_admin, enums.is_active.yes]);
+
+            if (findUser.rowCount > 0) {
+                // Hash the new password
+                const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+                // Update the password in the database
+                const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
+
+                if (result.rowCount > 0) {
+                    return res.status(200).json({ message: "Password update successful" });
+                } else {
+                    return res.status(500).json({ message: "Error updating password" });
                 }
+            } else {
+                return res.status(404).json({ message: "No user found with the given email address" });
+            }
+        } catch (error) {
+            console.error("Error updating password:", error);
+            return res.status(500).json({ message: "Error updating password" });
+        }
+    }
+);
+
+router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error occurred.",
+                errors: errors.array() // Include validation errors in the response
+            });
+        }
+
+        const user_id = req.query.user_id;
+
+        // Get User Information
+        const getUserInfo = await db.query("SELECT * FROM users WHERE id = $1 AND status = $2", [user_id, enums.is_active.yes]);
+        if (getUserInfo.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found."
+            });
+        }
+        const userInfo = getUserInfo.rows[0];
+        const { name: user_name } = userInfo;
+
+        // Get Salon Information
+        const getSalonInfo = await db.query("SELECT * FROM saloon WHERE user_id = $1 AND status = $2", [user_id, enums.is_active.yes]);
+        const salonInfo = getSalonInfo.rows[0];
+        const { id: saloon_id, saloon_name: salon_name } = salonInfo;
+
+        // Get Branches
+        const getBranches = await db.query("SELECT * FROM branches WHERE saloon_id = $1 AND status = $2", [saloon_id, enums.is_active.yes]);
+        const branches = getBranches.rows;
+
+        // Check if there are any offers available to participate
+        const checkOffers = await db.query('SELECT COUNT(id) FROM platform_coupon WHERE id NOT IN (SELECT DISTINCT platform_coupon_id FROM platform_coupon_branch) AND status = $1', [enums.is_active.yes]);
+        const offersCount = parseInt(checkOffers.rows[0].count);
+        const offerbannertoshow = offersCount > 0;
+
+        const data = {
+            user: { name: user_name, salon_name: salon_name },
+            branches: branches,
+            offerbannertoshow: offerbannertoshow
+        };
+
+        res.json(data);
+    } catch (error) {
+        console.error("Error in dashboard route:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error."
+        });
+    }
+});
+
+
+router.get("/analyticswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+    try {
+        let from_date_range = moment();
+        let to_date_range = moment();
+        // If no date range provided, use current date
+        if (req.query.from_date_range && req.query.to_date_range) {
+            from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+            to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+        }
+
+        // Parse date range using Moment.js
+        const momentFromDateRange = moment(from_date_range).format("YYYY-MM-DD");
+        const momentToDateRange = moment(to_date_range).format("YYYY-MM-DD");
+        const branch_id = req.query.branch_id;
+
+        // Fetch appointments within the specified date range
+        const getAppointmentData = await db.query("SELECT * FROM appointment WHERE branch_id = $1 AND appointment_date >= $2 AND appointment_date <= $3 AND status NOT IN ($4);", [branch_id, momentFromDateRange, momentToDateRange, enums.appointmentType.Pending_Payment_Confirmation]);
+
+        const total_appointments = getAppointmentData.rows.length;
+
+        let completedAppointments = 0;
+        let cancelledAppointments = 0;
+
+        // Count completed and cancelled appointments
+        for (const appointment of getAppointmentData.rows) {
+            if (parseInt(appointment.status) === enums.appointmentType.Closed) {
+                completedAppointments++;
+            }
+            if (parseInt(appointment.status) === enums.appointmentType.Cancelled) {
+                cancelledAppointments++;
             }
         }
+
+        // Calculate expected sales within the date range
+        const getExpectedSales = await db.query("SELECT SUM(net_amount) FROM appointment WHERE status IN ($1, $2, $3) AND branch_id = $4 AND appointment_date >= $5 AND appointment_date <= $6;", [enums.appointmentType.Confirmed, enums.appointmentType.Closed, enums.appointmentType.NoShow, branch_id, momentFromDateRange, momentToDateRange]);
+        const expectedSales = getExpectedSales.rows[0].sum;
+
+        res.json({
+            success: true,
+            data: {
+                total_appointments: total_appointments,
+                completed: completedAppointments,
+                cancelled: cancelledAppointments,
+                expectedSales: expectedSales
+            }
+        });
+    } catch (error) {
+        console.log(error)
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+    }
 });
+
+router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+    try {
+        let from_date_range = moment();
+        let to_date_range = moment();
+        // If no date range provided, use current date
+        if (req.query.from_date_range && req.query.to_date_range) {
+            from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+            to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+        }
+
+        // Parse date range using Moment.js
+        const momentFromDateRange = moment(from_date_range).format("YYYY-MM-DD");
+        const momentToDateRange = moment(to_date_range).format("YYYY-MM-DD");
+        const branch_id = req.query.branch_id;
+
+        const getNetSales = await db.query("SELECT SUM(total_amount_paid) FROM appointment WHERE status = $1 AND appointment_date >= $2 AND appointment_date <= $3 AND branch_id = $4", [enums.appointmentType.Closed, from_date_range, to_date_range, branch_id]);
+        const netSales = getNetSales.rows[0].sum;
+        const closedAppointments = getNetSales.rowCount;
+
+        res.json({
+            success: true,
+            data: {
+                netSales: netSales,
+                message: `${closedAppointments} Closed Appointments`
+            }
+        })
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        });
+    }
+
+
+});
+
+// router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), authMiddleware,async  (req,res)=>{
+
+//     const branch_id = req.query.branch_id;
+
+//     const getServices = await db.query("SELECT service_id, COUNT(*) AS bookings_count FROM appointment_items GROUP BY service_id ORDER BY bookings_count DESC;",);
+
+
+//     for (const Services of getServices.rows) {
+//         if(Services.)
+//     }
+
+// });
+// router.get("/salesbyserviceswithdaterange");
+// router.get("/toppayingcustomers");
+// router.get("/allservices");
+// router.get("/servicedetails");
+// router.post("/servicedetails");
+// router.get("/allappointments"); // check filtering in UI
+// router.get("/appointmentdetails");
+// router.get("/salonprofiledetails");
+// router.get("/settlementdetailswithfilter");
+// router.get("/detailedsettlementsdetails");
+// router.post("/store-hours");
+// router.put("/store-hours");
+// router.get("/platform-offers");
+// router.get("/platform-offer-details");
+// router.post("/join-platform-offer");
+// router.post("/view-platform-offer-insights");
+// router.post("/exit-from-platform-offer");
+// router.post("/sales-over-time-with-platform-offer",);
+// router.post("/sales-by-service-with-platform-offer",);
+// router.post("/top-paying-customers-with-platform-offer",);
+
 
 router.get("/initializepayment", authMiddleware, async (req, res) => {
     res.send("You are in")
@@ -643,6 +893,27 @@ router.delete("/services",
     }
 );
 
+router.delete("/serviceoption/:option_id", check("option_id").isInt().customSanitizer(value => parseInt(value)), authMiddleware, async (req, res) => {
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, messaage: "Validation Error Occurred", errors: errors.array() })
+    }
+    try {
+        const id = req.params.option_id;
+        const deleteOption = await db.query("UPDATE services_options SET status = $1 WHERE id = $2 AND status = $3;", [enums.is_active.no, id, enums.is_active.yes])
+        if (deleteOption.rowCount > 0) {
+            return res.json({ success: true, messaage: "Service option deleted succesfully..." });
+        } else {
+            return res.json({ success: false, messaage: "Service option not found..." });
+        }
+
+    } catch (error) {
+        res.status(500).json("Internal server error occurred.")
+    }
+
+});
+
 router.get("/getServiceCreationDetails", authMiddleware, async (req, res) => {
 
     try {
@@ -651,12 +922,12 @@ router.get("/getServiceCreationDetails", authMiddleware, async (req, res) => {
         const getCategories = await db.query("SELECT id,name FROM categories");
         const categories = getCategories.rows;
         res.status(200).json({ department: department, categories: categories });
-        // res.send("Hello")
     }
     catch (error) {
         res.status(400).json(error);
     }
 })
+
 
 
 

@@ -16,21 +16,14 @@ const port = process.env.port;
 
 app.use(bodyParser.urlencoded({ extended: true, }));
 
+
+
 // Index Route
 app.get("/", (req, res) => {
     res.render("index.ejs")
 })
 
 
-// app.use('/api/customer/', customerRoutes);
-
-// app.use('/api/salon', salonRoutes);
-
-// app.use('/api/appointment',appointmentRoutes);
-
-// app.use('/api/payment',paymentRoutes);
-
-// app.use('/api/services',serviceRoutes);
 
 
 app.use('/api/owners', salonowners);
