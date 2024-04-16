@@ -1,7 +1,7 @@
 import express, { application, response } from "express";
 import bodyParser from "body-parser";
 import db from "../database.js";
-import bcrypt from "bcrypt";
+import bcrypt, { compareSync } from "bcrypt";
 import jwt from "jsonwebtoken";
 import authMiddleware from '../middleware/authMiddleware.js';
 import { check, body, validationResult, header } from 'express-validator';
@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 import * as enums from "../enums.js"
 import { fileURLToPath } from 'url';
 import path, { parse } from 'path';
-import fs from 'fs';
+import fs, { appendFile, appendFileSync, stat } from 'fs';
 
 const router = express.Router();
 const saltRounds = Number(process.env.saltrounds);
@@ -172,15 +172,16 @@ router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
                 })
             ]);
 
-            return res.send({
+            return res.json({
+                success: true,
                 message: "OTP Sent to Registered mail address.",
                 otp: updateResult.rows[0].otp
             });
         } else {
-            return res.send("OTP sent to Registered mail address.");
+            return res.json({ success: true, message: "OTP sent to Registered mail address." });
         }
     } catch (error) {
-        return res.send(error);
+        res.json({ success: false, messaage: "Internal Server Error Occurred." });
     }
 });
 
@@ -207,16 +208,16 @@ router.post("/updatepassword",
                 const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
 
                 if (result.rowCount > 0) {
-                    return res.status(200).json({ message: "Password update successful" });
+                    return res.status(200).json({ success: true, message: "Password update successful" });
                 } else {
-                    return res.status(500).json({ message: "Error updating password" });
+                    return res.status(500).json({ success: false, message: "Error updating password" });
                 }
             } else {
-                return res.status(404).json({ message: "No user found with the given email address" });
+                return res.status(404).json({ success: false, message: "No user found with the given email address" });
             }
         } catch (error) {
             console.error("Error updating password:", error);
-            return res.status(500).json({ message: "Error updating password" });
+            return res.status(500).json({ success: true, message: "Error updating password" });
         }
     }
 );
@@ -265,7 +266,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
             offerbannertoshow: offerbannertoshow
         };
 
-        res.json(data);
+        res.json({ success: true, data });
     } catch (error) {
         console.error("Error in dashboard route:", error);
         res.status(500).json({
@@ -276,7 +277,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
 });
 
 
-router.get("/analyticswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -346,8 +347,8 @@ router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_dat
         });
     }
     try {
-        let from_date_range = moment();
-        let to_date_range = moment();
+        let from_date_range = moment().format("YYYY-MM-DD");
+        let to_date_range = moment().format("YYYY-MM-DD");
         // If no date range provided, use current date
         if (req.query.from_date_range && req.query.to_date_range) {
             from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
@@ -381,43 +382,841 @@ router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_dat
 
 });
 
-// router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), authMiddleware,async  (req,res)=>{
+router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
 
-//     const branch_id = req.query.branch_id;
+    try {
+        const branch_id = req.query.branch_id;
 
-//     const getServices = await db.query("SELECT service_id, COUNT(*) AS bookings_count FROM appointment_items GROUP BY service_id ORDER BY bookings_count DESC;",);
+        let from_date_range = moment().format("YYYY-MM-DD");
+        let to_date_range = moment().format("YYYY-MM-DD");
+        // If no date range provided, use current date
+        if (req.query.from_date_range && req.query.to_date_range) {
+            from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+            to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+        }
+
+        const getServicesQuery = `WITH service_options AS (
+            SELECT so.id AS service_option_id
+            FROM services s
+            JOIN services_options so ON s.id = so.service_id
+            WHERE s.branch_id = $1
+              AND s.status = $2
+              AND so.status = $3
+        ),
+        appointment_ids AS (
+            SELECT ai.appointment_id
+            FROM appointment_items ai
+            JOIN service_options so ON ai.service_option_id = so.service_option_id
+        ),
+        appointments_with_sales AS (
+            SELECT a.id AS appointment_id,
+                   a.net_amount
+            FROM appointment a
+            JOIN appointment_ids ai ON a.id = ai.appointment_id
+            WHERE a.status = $4
+            AND a.appointment_date >= $7
+            AND a.appointment_date <= $8 
+        )
+        SELECT s.id AS service_id,
+               s.name AS service_name,
+               COUNT(a.appointment_id) AS total_bookings,
+               SUM(a.net_amount) AS total_sales
+        FROM services s
+        JOIN services_options so ON s.id = so.service_id
+        JOIN appointment_items ai ON so.id = ai.service_option_id
+        JOIN appointments_with_sales a ON ai.appointment_id = a.appointment_id
+        WHERE s.status = $5
+          AND so.status = $6
+        GROUP BY s.id, s.name
+        ORDER BY total_sales DESC
+        LIMIT $9;    
+        `;
+
+        let limit = req.query.limit ? req.query.limit : 10;
+        const queryVariables = [branch_id, enums.is_active.yes, enums.is_active.yes, enums.appointmentType.Closed, enums.is_active.yes, enums.is_active.yes, from_date_range, to_date_range, limit];
+
+        const getResult = await db.query(getServicesQuery, queryVariables);
+
+        const result = getResult.rows;
+
+        res.json({ success: true, data: result })
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured."
+        })
+    }
 
 
-//     for (const Services of getServices.rows) {
-//         if(Services.)
-//     }
+});
 
-// });
-// router.get("/salesbyserviceswithdaterange");
-// router.get("/toppayingcustomers");
-// router.get("/allservices");
-// router.get("/servicedetails");
-// router.post("/servicedetails");
-// router.get("/allappointments"); // check filtering in UI
-// router.get("/appointmentdetails");
-// router.get("/salonprofiledetails");
+router.get("/toppayingcustomers", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+    let from_date_range = moment().format("YYYY-MM-DD");
+    let to_date_range = moment().format("YYYY-MM-DD");
+    // If no date range provided, use current date
+    if (req.query.from_date_range && req.query.to_date_range) {
+        from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+        const query = `WITH appointments_with_sales AS (
+            SELECT a.user_id,
+                   SUM(a.total_amount_paid) AS total_amount_paid
+            FROM appointment a
+            WHERE a.branch_id = $1
+              AND a.status = $2
+              AND a.appointment_date >= $3 
+              AND a.appointment_date <= $4 
+            GROUP BY a.user_id
+        )
+        SELECT u.id AS user_id,
+               u.name AS user_name,
+               u.email AS user_email,
+               aws.total_amount_paid
+        FROM appointments_with_sales aws
+        JOIN users u ON aws.user_id = u.id
+        WHERE u.status = $5
+        ORDER BY aws.total_amount_paid DESC
+        LIMIT 10;
+        `;
+        const queryVariables = [branch_id, enums.appointmentType.Closed, from_date_range, to_date_range, enums.is_active.yes];
+
+        const queryTopPayingCustomers = await db.query(query, queryVariables);
+        const topPayingCustomers = queryTopPayingCustomers.rows;
+
+        res.json({
+            success: true,
+            data: topPayingCustomers,
+        })
+
+    } catch (error) {
+
+    }
+});
+
+router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+    let from_date_range = moment().format("YYYY-MM-DD");
+    let to_date_range = moment().format("YYYY-MM-DD");
+    // If no date range provided, use current date
+    if (req.query.from_date_range && req.query.to_date_range) {
+        from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+        const querySalesOverTime = `
+        SELECT 
+        A.appointment_date,
+        SUM(A.total_amount_paid) AS "Sales"
+        FROM appointment A
+        WHERE 
+        A.appointment_date BETWEEN $1 AND $2 AND A.status = $3 AND branch_id = $4 
+        GROUP BY A.appointment_date
+        ORDER BY A.appointment_date ASC;
+        `;
+
+        const querySalesOverTimeParams = [from_date_range, to_date_range, enums.appointmentType.Closed, branch_id]
+
+        const queryFigures = `
+        SELECT 
+        SUM(A.net_amount) AS "Expected Sales",
+        AVG(A.net_amount) AS "Avg. Appointment Value",
+        COUNT(*) AS "Total Appointments"
+        FROM appointment A
+        WHERE 
+        A.appointment_date BETWEEN $1 AND $2 AND branch_id = $3
+        `;
+
+        const queryFiguresParams = [from_date_range, to_date_range, branch_id];
+
+        const getSalesOverTime = await db.query(querySalesOverTime, querySalesOverTimeParams);
+        const getFigures = await db.query(queryFigures, queryFiguresParams);
+
+
+        res.json({
+            success: true,
+            data: {
+                figures: getFigures.rows,
+                sales: getSalesOverTime.rows,
+            }
+        })
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured."
+        })
+    }
+
+})
+
+router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+    let from_date_range = moment().format("YYYY-MM-DD");
+    let to_date_range = moment().format("YYYY-MM-DD");
+    // If no date range provided, use current date
+    if (req.query.from_date_range && req.query.to_date_range) {
+        from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+        const query = await db.query(`
+        SELECT
+        A.appointment_date,
+        SUM(A.net_amount) AS "Total Sales",
+        AVG(A.net_amount) AS "Avg. Appointment Value",
+        COUNT(*) AS "Total Appointments"
+        FROM appointment A
+        WHERE
+        A.appointment_date BETWEEN $1 AND $2 AND A.branch_id = $3 AND A.status = $4
+        GROUP BY A.appointment_date
+        ORDER BY A.appointment_date ASC;
+        `, [from_date_range, to_date_range, branch_id, enums.appointmentType.Closed]);
+
+        const result = query.rows
+        res.json({ success: true, result })
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        })
+    }
+});
+
+router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+    let from_date_range = moment().format("YYYY-MM-DD");
+    let to_date_range = moment().format("YYYY-MM-DD");
+    // If no date range provided, use current date
+    if (req.query.from_date_range && req.query.to_date_range) {
+        from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+
+        const query = await db.query(`
+        SELECT 
+        S.name,
+        COUNT(*) AS "Total Appointments",
+        AVG(A.net_amount) AS "Avg. Appointment Value",
+        SUM(A.net_amount) AS "Total Sales"
+        FROM appointment A
+        INNER JOIN appointment_items AI ON A.id = AI.appointment_id 
+        INNER JOIN services_options S ON AI.service_option_id = S.id
+        WHERE A.status = $1 AND A.branch_id = $2 AND A.appointment_date BETWEEN $3 AND $4 -- Filter for completed appointments
+        GROUP BY S.name
+        ORDER BY S.name ASC;
+        `, [enums.appointmentType.Closed, branch_id, from_date_range, to_date_range,]);
+        const data = query.rows
+        res.json({ success: true, data });
+
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        })
+    }
+});
+
+router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+    let from_date_range = moment().format("YYYY-MM-DD");
+    let to_date_range = moment().format("YYYY-MM-DD");
+    // If no date range provided, use current date
+    if (req.query.from_date_range && req.query.to_date_range) {
+        from_date_range = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        to_date_range = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+
+        const result = await db.query(
+            `
+        WITH RankedCustomers AS (
+            SELECT 
+              C.id AS user_id,
+              C.name AS customer_name,
+              COUNT(*) AS total_appointments,
+              AVG(A.net_amount) AS avg_appointment_value,
+              SUM(A.net_amount) AS total_sales
+            FROM appointment A
+            INNER JOIN appointment_items AI ON A.id = AI.appointment_id
+            INNER JOIN users C ON A.user_id = C.id
+            WHERE A.status = $1 AND A.branch_id = $2 AND A.appointment_date BETWEEN $3 AND $4
+          GROUP BY C.id, C.name
+            ORDER BY total_sales DESC
+          )
+          SELECT 
+            ROW_NUMBER() OVER (ORDER BY total_sales DESC) AS serial_no,
+            user_id,
+            customer_name,
+            total_appointments,
+            avg_appointment_value,
+            total_sales
+          FROM RankedCustomers;
+          `, [enums.appointmentType.Closed, branch_id, from_date_range, to_date_range]);
+
+        res.json({
+            success: true,
+            data: result.rows
+        })
+
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        })
+    }
+});
+
+router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const branch_id = req.query.branch_id;
+
+    const services = []
+    const data = { services }
+    try {
+
+        const getAllServices = await db.query("SELECT id,name,branch_id,category_id,description,department FROM services WHERE branch_id = $1 AND status = $2", [branch_id, enums.is_active.yes]);
+        if (getAllServices.rowCount === 0) {
+            res.json({ success: true, message: "No Services Found.", data: [] })
+        }
+        for (const iterator of getAllServices.rows) {
+            const { id, name, branch_id, category_id, description } = iterator;
+            const category = await db.query('SELECT name FROM categories WHERE id = $1 ', [iterator.category_id]);
+            const department = await db.query('SELECT name FROM department WHERE id = $1 ', [iterator.department]);
+            services.push({
+                id: id,
+                name: name,
+                branch_id: branch_id,
+                category_id: category_id,
+                category: category.rows[0].name,
+                department: department.rows[0].name,
+                description: description,
+            })
+        }
+
+
+
+        res.json({ succe: true, data })
+
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        })
+    }
+});
+
+router.get("/services/:service_id", check('service_id').isInt(), authMiddleware, async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array() // Include validation errors in the response
+        });
+    }
+
+    const service_id = req.params.service_id;
+    try {
+
+        const getServiceDetails = await db.query("SELECT * from services WHERE id = $1;", [service_id]);
+        if (getServiceDetails.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                messaage: "Service Not Found."
+            })
+        }
+        const getServiceOptions = await db.query("SELECT * from services_options WHERE service_id = $1 AND status = $2;", [service_id, enums.is_active.yes]);
+
+        const getServiceAdditionalInformations = await db.query("SELECT * FROM additional_information WHERE service_id = $1 AND status = $2", [service_id, enums.is_active.yes]);
+
+        const data = { service_details: [getServiceDetails.rows[0]], services_options: getServiceOptions.rows, additional_information: getServiceAdditionalInformations.rows }
+
+        res.json({ suc: true, data });
+
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error Occured"
+        })
+    }
+});
+
+router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error occurred.",
+                errors: errors.array()
+            });
+        }
+
+        const branch_id = req.query.branch_id;
+
+        // Define the base SQL query
+        let query = "SELECT * FROM appointment WHERE branch_id = $1";
+        const queryParams = [branch_id];
+
+        // Check for appointment status filter
+        if (req.query.appointment_status) {
+            query += " AND status = $2";
+            queryParams.push(req.query.appointment_status);
+        }
+
+        // Check for payment status filter
+        if (req.query.payment_status === 'paid') {
+            query += " AND total_amount_paid >= net_amount";
+        } else if (req.query.payment_status === 'unpaid') {
+            query += " AND total_amount_paid = 0";
+        } else if (req.query.payment_status === 'partially_paid') {
+            query += " AND total_amount_paid > 0 AND total_amount_paid < net_amount";
+        }
+
+        // Check for booking start time filter
+        if (req.query.booking_time === 'earliest_first') {
+            query += " ORDER BY start_time ASC";
+        } else if (req.query.booking_time === 'earliest_last') {
+            query += " ORDER BY start_time DESC";
+        }
+
+        // Retrieve appointments from the database based on the constructed query
+        const { rows: appointments, rowCount: total_appointments } = await db.query(query, queryParams);
+
+        if (total_appointments === 0) {
+            return res.status(404).json({
+                success: true,
+                message: "No Appointments Found",
+            });
+        }
+
+        // Process and format appointments
+        const formattedAppointments = appointments.map(appointment => {
+            const { id, user_id, receipt_number, appointment_date, subtotal, total_discount, total_tax, is_rescheduled, start_time, end_time, seat_number, status, total_amount_paid, net_amount } = appointment;
+
+            // Determine payment status based on net_amount and paid_amount
+            let paymentStatus = "Unpaid";
+            if (total_amount_paid >= net_amount) {
+                paymentStatus = "Paid";
+            } else if (total_amount_paid > 0) {
+                paymentStatus = "Partially Paid";
+            }
+
+            // Map appointment status
+            let appointmentStatus = "No Show";
+            switch (status) {
+                case 1:
+                    appointmentStatus = "Pending Payment Confirmation";
+                    break;
+                case 2:
+                    appointmentStatus = "Confirmed";
+                    break;
+                case 3:
+                    appointmentStatus = "Closed";
+                    break;
+                case 4:
+                    appointmentStatus = "Cancelled";
+                    break;
+            }
+
+            return {
+                id,
+                user_id,
+                receipt_number,
+                appointment_date,
+                subtotal,
+                total_discount,
+                total_tax,
+                net_amount,
+                total_amount_paid,
+                is_rescheduled,
+                start_time,
+                end_time,
+                seat_number,
+                paymentStatus,
+                appointmentStatus
+            };
+        });
+
+        res.json({ success: true, total_appointments, data: { appointments: formattedAppointments } });
+    } catch (error) {
+        console.error("Error fetching appointments:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error Occurred"
+        });
+    }
+});
+
+router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, res) => {
+    try {
+        // Validate request parameters
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error occurred.",
+                errors: errors.array()
+            });
+        }
+
+        // Extract appointment_id from request query
+        const appointment_id = req.query.appointment_id;
+
+        // Get appointment details from the database
+        const getAppointmentDetails = await db.query("SELECT * FROM appointment WHERE id = $1;", [appointment_id]);
+        if (getAppointmentDetails.rows.length === 0) {
+            // If appointment not found, return 404 response
+            return res.status(404).json({
+                success: false,
+                message: "Appointment not found."
+            });
+        }
+
+        // Get user details associated with the appointment
+        const user_id = getAppointmentDetails.rows[0].user_id;
+        const getUserDetails = await db.query("SELECT * FROM users WHERE id = $1", [user_id]);
+        const userDetails = getUserDetails.rows[0];
+
+        // Get service options associated with the appointment
+        const getServiceOptions = await db.query("SELECT * FROM appointment_items WHERE appointment_id = $1;", [appointment_id]);
+        const services = [];
+        let salon_services_amount = 0;
+        let platform_fee = 5;
+        let discount = 0;
+        let gst = 0;
+        let total_amount_paid = 0;
+
+        // Iterate through each service option and calculate relevant amounts
+        for (const service of getServiceOptions.rows) {
+            const serviceOption_id = service.service_option_id;
+            const { service_price, total_item_discount, total_tax, total_price_paid } = service;
+
+            // Calculate amounts for payments info
+            salon_services_amount += parseFloat(service_price);
+            discount += parseFloat(total_item_discount);
+            gst += parseFloat(total_tax);
+            discount += parseFloat(total_item_discount);
+            total_amount_paid += parseFloat(total_price_paid);
+
+            // Get service option details
+            const getServiceOptionDetails = await db.query("SELECT * FROM services_options WHERE id = $1", [serviceOption_id]);
+            if (getServiceOptionDetails.rows.length === 0) {
+                // If service option not found, return 404 response
+                return res.status(404).json({
+                    success: false,
+                    message: "Service not found."
+                });
+            }
+            const { service_id, name } = getServiceOptionDetails.rows[0];
+
+            // Get service name
+            const getServiceName = await db.query("SELECT * FROM services WHERE id = $1", [service_id]);
+            const serviceName = getServiceName.rows[0].name;
+
+            // Push service details into services array
+            services.push({
+                service_id: service_id,
+                service_name: serviceName,
+                service_option_details: [{
+                    service_option_id: serviceOption_id,
+                    service_option_name: name,
+                    service_price: service_price,
+                }]
+            });
+        }
+
+        const getPayments = await db.query("SELECT * from payments WHERE appointment_id = $1;", [appointment_id]);
+        const transaction_info = [];
+        for (const iterator of getPayments.rows) {
+            const { id, user_id: uid, payment_gateway_transaction_id, payment_method, payment_date, amount, status, remarks } = iterator;
+            transaction_info.push({
+                id: id,
+                user_id: uid,
+                payment_gateway_transaction_id: payment_gateway_transaction_id,
+                payment_method: payment_method,
+                payment_date: payment_date,
+                amount: amount,
+                status: status == 1 ? "Success" : "Failed",
+                remarks: remarks
+            })
+        }
+
+        // Payments Info
+        const payment_info = {
+            salon_services_amount: parseFloat(salon_services_amount).toFixed(2),
+            platform_fee: parseFloat(platform_fee).toFixed(2), // Hardcoded platform fee for now
+            total_item_discount: parseFloat(discount).toFixed(2),
+            gst: parseFloat(gst).toFixed(2),
+            total_price_paid: parseFloat(total_amount_paid).toFixed(2),
+            net_total: parseFloat(salon_services_amount + platform_fee - discount + gst).toFixed(2),
+            total_remaining: parseFloat((salon_services_amount + platform_fee - discount + gst) - total_amount_paid).toFixed(2)
+
+        };
+
+        // Send response with appointment, user, services, and payment information
+        res.json({
+            success: true,
+            data: {
+                appointment_details: getAppointmentDetails.rows[0],
+                user_details: {
+                    id: userDetails.id,
+                    email: userDetails.email,
+                    name: userDetails.name,
+                    phone_number: userDetails.phone_number,
+                },
+                services_details: services,
+                payment_info: payment_info,
+                transaction_info: transaction_info
+            }
+        });
+    } catch (error) {
+        // Handle unexpected errors
+        console.error("Error fetching appointment details:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error Occurred"
+        });
+    }
+});
+
+router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
+    // Validate request parameters
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array()
+        });
+    }
+    try {
+        const branch_id = req.query.branch_id;
+
+        const getBranchDetails = await db.query("SELECT * FROM branches WHERE id = $1 AND status = $2;", [branch_id, enums.is_active.yes]);
+        if (getBranchDetails.rowCount === 0) {
+            return res.json({
+                success: false,
+                messaage: "Salon/Branch not found."
+            })
+        }
+        const branchDetails = getBranchDetails.rows[0];
+
+        const saloon_id = branchDetails.saloon_id;
+        const branch_name = branchDetails.name;
+        const city_id = branchDetails.city_id;
+        const address = branchDetails.city_id;
+        const type = branchDetails.type === 1 ? "Unisex" : branchDetails.type === 2 ? "Men's" : "Women's";
+        const seats = branchDetails.seats;
+        const latitude = branchDetails.latitude;
+        const longitude = branchDetails.longitude;
+
+        res.json({
+            success: true,
+            data: {
+                saloon_id: saloon_id,
+                branch_name: branch_name,
+                city_id: city_id,
+                address: address,
+                type: type,
+                seats: seats,
+                latitude: latitude,
+                longitude: longitude
+            }
+        })
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error"
+        })
+    }
+});
 // router.get("/settlementdetailswithfilter");
 // router.get("/detailedsettlementsdetails");
-// router.post("/store-hours");
-// router.put("/store-hours");
-// router.get("/platform-offers");
-// router.get("/platform-offer-details");
-// router.post("/join-platform-offer");
+router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array()
+        });
+    }
+    try {
+        const branch_id = req.query.branch_id;
+
+        const getOffers = await db.query("SELECT * FROM platform_coupon");
+
+        const data = [];
+        for (const offer of getOffers.rows) {
+            let isParticipated = false;
+
+            const checkParticipation = await db.query("SELECT * FROM platform_coupon_branch WHERE branch_id = $1 AND platform_coupon_id = $2;", [branch_id, offer.id]);
+
+            if (checkParticipation.rowCount > 0) {
+                isParticipated = true;
+            }
+
+            data.push({
+                id: offer.id,
+                // name:offer.name,
+                discount_amount: offer.discount_amount,
+                remark: offer.remark,
+                status: offer.status,
+                max_advance_payment: offer.max_advance_payment,
+                advance_percentage: offer.advance_percentage,
+                isParticipated: isParticipated
+            })
+        }
+
+        res.json({
+            success: true,
+            data: data
+        })
+    } catch (error) {
+        console.log(error);
+        res.json({
+            success: false,
+            message: "Internal Server Error"
+        })
+    }
+});
+
+router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: "Validation error occurred.",
+            errors: errors.array()
+        });
+    }
+    try {
+        const branch_id = req.body.branch_id;
+        const platform_coupon_id = req.body.platform_coupon_id;
+        const checkPlatformCouponStatus = await db.query("SELECT * FROM platform_coupon WHERE id=$1 AND status = $2;", [platform_coupon_id, enums.is_active.yes]);
+        if (checkPlatformCouponStatus.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Platform Coupon Not Found."
+            })
+        }
+
+        const checkParticipation = await db.query("SELECT * FROM platform_coupon_branch WHERE branch_id = $1 AND platform_coupon_id = $2;", [branch_id, platform_coupon_id]);
+        if (checkParticipation.rowCount === 0) {
+
+            const joinPlatformCoupon = await db.query("INSERT INTO platform_coupon_branch (branch_id,platform_coupon_id) VALUES ($1,$2);", [branch_id, platform_coupon_id]);
+
+            res.status(201).json({
+                success: true,
+                message: "Successfully joined the offer."
+            })
+        } else {
+            return res.status(404).json({
+                success: false,
+                messaage: "Already Participated."
+            })
+        }
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            messaage: "Internal Server Error"
+        })
+    }
+});
 // router.post("/view-platform-offer-insights");
 // router.post("/exit-from-platform-offer");
 // router.post("/sales-over-time-with-platform-offer",);
 // router.post("/sales-by-service-with-platform-offer",);
 // router.post("/top-paying-customers-with-platform-offer",);
 
-
-router.get("/initializepayment", authMiddleware, async (req, res) => {
-    res.send("You are in")
-})
 
 router.post('/store-hours', jsonParser, [
     body('[0].branch_id').isNumeric().withMessage('Branch ID must be an integer'),
@@ -507,6 +1306,28 @@ router.post('/store-hours', jsonParser, [
     }
 });
 
+router.get('/store-hours', check("branch_id").isInt(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation Error Occurred.", errors: errors.array() });
+    }
+    try {
+
+        const branch_id = req.query.branch_id;
+
+        const getStoreHours = await db.query("SELECT * FROM branch_hours WHERE branch_id = $1", [branch_id]);
+        const branch_hours = [];
+
+        for (const storeHours of getStoreHours.rows) {
+            branch_hours.push(storeHours)
+        }
+
+        res.json({ success: true, data: branch_hours.sort((a, b) => a.id - b.id) })
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Internal server error occurred." });
+    }
+});
+
 router.put('/update-store-hours/', jsonParser, [
     body('[0].branch_id').isNumeric().withMessage('Branch ID must be an integer'),
     body().isArray().withMessage('Store hours data must be an array'),
@@ -577,6 +1398,59 @@ router.put('/update-store-hours/', jsonParser, [
     }
 });
 
+router.get('/holidays', jsonParser, check('branch_id').isInt().withMessage('Branch ID must be an integer'), authMiddleware,
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const branch_id = req.query.branch_id;
+
+            const getHolidays = await db.query("SELECT * FROM holiday_hours WHERE branch_id = $1 AND status = $2;", [branch_id, enums.is_active.yes]);
+
+            if (getHolidays.rowCount === 0) {
+                return res.json({
+                    success: true,
+                    message: "No Holidays Found",
+                    data: []
+                })
+            }
+
+            const formatedData = []
+
+            for (const holiday of getHolidays.rows) {
+                const id = holiday.id;
+                const from_date = moment(holiday.from_date, "YYYY-MM-DD HH:mm:ss").format("dddd") + ", " + moment(holiday.from_date, "YYYY-MM-DD HH:mm:ss").format("MMM DD YYYY");
+                const to_date = moment(holiday.to_date, "YYYY-MM-DD HH:mm:ss").format("dddd") + ", " + moment(holiday.to_date, "YYYY-MM-DD HH:mm:ss").format("MMM DD YYYY");
+
+                // Calculate Duration
+                const differenceInMilliseconds = moment.duration(moment(holiday.to_date, "YYYY-MM-DD HH:mm:ss").diff(moment(holiday.from_date, "YYYY-MM-DD HH:mm:ss")));
+                const duration = moment.duration(Math.abs(differenceInMilliseconds));
+                const days = Math.floor(duration.asDays()); // Calculate the number of whole days
+                const hours = duration.hours();
+                const subline = `${days} days and ${hours} hours`;
+                formatedData.push({
+                    id: id, from_date: from_date, to_date, subline: subline
+                });
+            }
+
+
+            res.json({
+                success: true,
+                data: formatedData
+            });
+        } catch (error) {
+            console.log(error)
+            res.status(500).json({
+                success: false,
+                message: "Internal Server Error"
+            });
+        }
+
+    });
+
 router.post('/holidays', jsonParser, [
     body('branch_id').isNumeric().withMessage('Branch ID must be an integer'),
     body('from_date').isISO8601().toDate().withMessage('From date must be a valid ISO8601 date'),
@@ -596,10 +1470,10 @@ router.post('/holidays', jsonParser, [
                 res.status(409).json({ success: false, message: "We're unable to save the new holiday hours because they overlap with existing holiday hours. Please select a different time period or modify existing one." });
             } else {
                 // Insert holiday hours
-                await db.query('INSERT INTO holiday_hours (branch_id, from_date, to_date, status) VALUES ($1, $2, $3, $4)',
+                const insertHoliday = await db.query('INSERT INTO holiday_hours (branch_id, from_date, to_date, status) VALUES ($1, $2, $3, $4) RETURNING id',
                     [branch_id, from_date, to_date, status]);
 
-                res.status(201).json({ success: true, message: 'Holiday hours added successfully' });
+                res.status(201).json({ success: true, message: 'Holiday hours added successfully', data: { id: insertHoliday.rows[0].id } });
             }
         } catch (error) {
             console.error(error);
@@ -623,7 +1497,7 @@ router.put('/holidays', jsonParser, [
         const { branch_id, from_date, to_date, status } = req.body;
 
         // Check if the holiday hours exist
-        const checkExistence = await db.query("SELECT id FROM holiday_hours WHERE id = $1", [id]);
+        const checkExistence = await db.query("SELECT id FROM holiday_hours WHERE id = $1 AND branch_id", [id, branch_id]);
         if (checkExistence.rowCount === 0) {
             return res.status(404).json({ success: false, message: "Holiday hours not found" });
         }
@@ -635,7 +1509,7 @@ router.put('/holidays', jsonParser, [
         }
 
         // Update the holiday hours
-        await db.query("UPDATE holiday_hours SET branch_id = $1, from_date = $2, to_date = $3, status = $4 WHERE id = $5", [branch_id, from_date, to_date, status, id]);
+        await db.query("UPDATE holiday_hours SET from_date = $2, to_date = $3, status = $4 WHERE id = $5", [from_date, to_date, status, id]);
 
         res.status(200).json({ success: true, message: "Holiday hours updated successfully" });
     } catch (error) {
@@ -681,15 +1555,15 @@ router.delete('/holidays',
 router.post("/services",
     jsonParser,
     body().isObject(),
-    body("service_name").isAlphanumeric(),
+    body("service_name").isString(),
     body("branch_id").isInt(),
     body("category_id").isInt(),
     body("description").isString(),
     body("additional_information").isArray(),
-    body("additional_information.*.title").isAlphanumeric(),
+    body("additional_information.*.title").isString(),
     body("additional_information.*.description").isString(),
     body("service_options").isArray(),
-    body("service_options.*.name").isAlphanumeric(),
+    body("service_options.*.name").isString(),
     body("service_options.*.discount").isInt(),
     body("service_options.*.price").isInt(),
     body("service_options.*.description").isString(),
