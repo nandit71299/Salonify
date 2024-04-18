@@ -44,7 +44,7 @@ router.post("/sendOTP",
         // IF VALIDATION ERRORS RETURN ERRORS
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.send(errors);
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         // ELSE TRY FINDING CUSTOMER WITH THE PROVIDED EMAIL
@@ -94,7 +94,7 @@ router.post("/registercustomer",
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
+                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
             }
 
             const email = req.body.email.toLowerCase();
@@ -141,7 +141,7 @@ router.post("/login",
         if (!errors.isEmpty()) {
             return res.status(400).json({
                 success: false,
-                message: "Validation Error Occurred",
+                message: "400 Bad Request",
                 errors: errors.array()
             });
         }
@@ -181,7 +181,7 @@ router.post("/updatepassword",
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
+                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
             }
 
             const email = req.body.email.toLowerCase();
@@ -286,10 +286,7 @@ router.get('/branchesbycategory', check("category_id").isInt(), authMiddleware, 
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(409).json({
-            success: false,
-            errors: errors.array()
-        })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -347,7 +344,7 @@ router.get("/cartcount",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const user_id = req.body.user_id;
@@ -389,7 +386,7 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const { searchstring, sortBy, sortOrder } = req.query;
@@ -491,7 +488,7 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
 router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -555,7 +552,7 @@ router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (
 router.get('/branchservices', check("id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const branch_id = req.query.id;
@@ -641,7 +638,7 @@ router.post("/add-to-cart",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const { user_id, branch_id, services } = req.body;
@@ -741,7 +738,7 @@ router.delete("/remove-from-cart",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const { user_id, branch_id } = req.body;
@@ -791,7 +788,7 @@ router.delete('/cartdeleteall',
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
         const userId = req.body.user_id;
 
@@ -828,11 +825,7 @@ router.delete('/cartdeleteall',
 router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appointment_date").isDate(), body('services').isArray(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.json({
-            success: false,
-            message: "Validation Error Occurred",
-            errors: errors.array(),
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -954,7 +947,7 @@ router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appoin
 router.get("/branchoffers", check("branch_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -1009,9 +1002,7 @@ router.post("/bookappointment",
         const errors = validationResult(req);
 
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                errors: errors.array()
-            });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         try {
@@ -1184,7 +1175,7 @@ router.put("/confirm-appointment",
         // Validate request parameters
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         try {
@@ -1261,7 +1252,7 @@ router.put("/confirm-appointment",
 router.get("/bookingshistory", check("user_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const user_id = req.body.user_id;
@@ -1343,7 +1334,7 @@ router.get("/bookingshistory", check("user_id").isInt(), authMiddleware, async (
 router.put("/servicewishlist", check('user_id').isInt(), check('type_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const { user_id, type_id } = req.body;
@@ -1393,7 +1384,7 @@ router.put("/servicewishlist", check('user_id').isInt(), check('type_id').isInt(
 router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const { user_id, type_id } = req.body;
@@ -1446,7 +1437,7 @@ router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), 
 router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors, message: "validation error occured" });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const appointmentId = req.query.appointment_id;
@@ -1519,7 +1510,7 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddlewar
 router.get("/cancellationsummary", check("appointment_id"), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors, message: "validation error occured" });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         // Initialize data object to store appointment, service, and refund details
@@ -1600,7 +1591,7 @@ router.get("/cancellationsummary", check("appointment_id"), authMiddleware, asyn
 router.put("/rescheduleappointment", check("appointment_id").isInt(), check("newDate").isDate(), check("newStartTime").isTime(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, errors: errors, message: "validation error occured" });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const { appointment_id, newDate } = req.query;
@@ -1683,7 +1674,7 @@ router.put("/rescheduleappointment", check("appointment_id").isInt(), check("new
 router.get("/wishlisteditems", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation Error Occured.", errors: errors.array() })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
 
@@ -1732,11 +1723,7 @@ router.get("/customerprofile", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation Error Occured",
-            errors: errors.array
-        })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -1764,11 +1751,7 @@ router.post("/customerprofile", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation Error Occured",
-            errors: errors.array
-        })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {

@@ -49,4 +49,8 @@ const payment_status = {
     refunded: 3
 }
 
+const coupon_type = {
+    platform_coupon: 1,
+    branch_coupon: 2
+}
 export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type, payment_status };

@@ -51,7 +51,7 @@ router.post("/registersalon",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const {
@@ -117,11 +117,7 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validaton Error Occured",
-            errors: errors.array()
-        })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     const { email, password } = req.body;
 
@@ -152,7 +148,9 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
 router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
     try {
         const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.send(errors);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        }
 
         const email = req.body.email.toLowerCase();
         const findOwner = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type=$3", [email, enums.is_active.yes, enums.UserType.salon_admin]);
@@ -192,7 +190,7 @@ router.post("/updatepassword",
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
+                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
             }
 
             const email = req.body.email.toLowerCase();
@@ -226,11 +224,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation error occurred.",
-                errors: errors.array() // Include validation errors in the response
-            });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const user_id = req.query.user_id;
@@ -280,11 +274,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
 router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         let from_date_range = moment();
@@ -340,11 +330,7 @@ router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), chec
 router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         let from_date_range = moment().format("YYYY-MM-DD");
@@ -385,11 +371,7 @@ router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_dat
 router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -463,11 +445,7 @@ router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("fro
 router.get("/toppayingcustomers", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -520,11 +498,7 @@ router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("f
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -587,11 +561,7 @@ router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("f
 router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -631,11 +601,7 @@ router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_
 router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -678,11 +644,7 @@ router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date
 router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -740,11 +702,7 @@ router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_
 router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branch_id = req.query.branch_id;
@@ -774,7 +732,7 @@ router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, 
 
 
 
-        res.json({ succe: true, data })
+        res.json({ success: true, data })
 
     }
     catch (error) {
@@ -786,14 +744,10 @@ router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, 
     }
 });
 
-router.get("/services/:service_id", check('service_id').isInt(), authMiddleware, async (req, res) => {
+router.get("/service/:service_id", check('service_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array() // Include validation errors in the response
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const service_id = req.params.service_id;
@@ -812,7 +766,7 @@ router.get("/services/:service_id", check('service_id').isInt(), authMiddleware,
 
         const data = { service_details: [getServiceDetails.rows[0]], services_options: getServiceOptions.rows, additional_information: getServiceAdditionalInformations.rows }
 
-        res.json({ suc: true, data });
+        res.json({ success: true, data });
 
     }
     catch (error) {
@@ -828,11 +782,7 @@ router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (r
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation error occurred.",
-                errors: errors.array()
-            });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const branch_id = req.query.branch_id;
@@ -936,11 +886,7 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
         // Validate request parameters
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation error occurred.",
-                errors: errors.array()
-            });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         // Extract appointment_id from request query
@@ -1067,11 +1013,7 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
     // Validate request parameters
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array()
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const branch_id = req.query.branch_id;
@@ -1118,14 +1060,11 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
 });
 // router.get("/settlementdetailswithfilter");
 // router.get("/detailedsettlementsdetails");
+
 router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array()
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const branch_id = req.query.branch_id;
@@ -1170,11 +1109,7 @@ router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
 router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation error occurred.",
-            errors: errors.array()
-        });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const branch_id = req.body.branch_id;
@@ -1211,11 +1146,271 @@ router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_
         })
     }
 });
-// router.post("/view-platform-offer-insights");
+
+router.get("/platform-offer-insights", check("branch_id").isInt(), check("platform_coupon_id").isInt(), check('from_date_range').isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        }
+
+        const branchId = req.query.branch_id;
+        const platformCouponId = req.query.platform_coupon_id;
+        let fromDateRange = req.query.from_date_range;
+        let toDateRange = req.query.to_date_range;
+
+        let query = `
+            SELECT A.id AS appointment_id, 
+            A.user_id,
+            A.receipt_number,
+            A.branch_id,
+            A.appointment_date,
+            A.subtotal,
+            A.total_discount,
+            A.total_tax,
+            A.net_amount,
+            A.total_amount_paid,
+            A.status,
+            A.start_time,
+            A.end_time,
+            A.seat_number,
+            AD.coupon_type,
+            AD.coupon_id,
+            AI.service_option_id,
+            AI.total_price_paid
+            FROM appointment AS A 
+            RIGHT JOIN appointment_discount AS AD ON A.id = AD.appointment_id 
+            RIGHT JOIN appointment_items AS AI ON A.id = AI.appointment_id 
+            WHERE A.branch_id = $1 AND A.status = $2 AND AD.coupon_id = $3`;
+
+        const queryParams = [branchId, enums.appointmentType.Closed, platformCouponId];
+
+        if (fromDateRange && toDateRange) {
+            fromDateRange = moment(fromDateRange, "YYYY-MM-DD").format("YYYY-MM-DD");
+            toDateRange = moment(toDateRange, "YYYY-MM-DD").format("YYYY-MM-DD");
+            query += " AND A.appointment_date BETWEEN $4 AND $5";
+            queryParams.push(fromDateRange, toDateRange);
+        }
+
+        const getAppointments = await db.query(query, queryParams);
+
+        let totalSales = 0;
+        let totalDiscountAmount = 0;
+        const appointmentIds = [];
+        const appointmentsWithOffer = [];
+
+        for (const appointment of getAppointments.rows) {
+            appointmentIds.push(parseInt(appointment.appointment_id));
+            const appointmentDate = moment(appointment.appointment_date, "YYYY-MM-DD").format("YYYY-MM-DD");
+            const paidAmount = appointment.total_amount_paid;
+            appointmentsWithOffer.push({ appointment_date: appointmentDate, paid_amount: paidAmount });
+            totalSales += parseFloat(paidAmount);
+            totalDiscountAmount += parseFloat(appointment.total_discount);
+        }
+
+        const data = { appointments_with_offer: appointmentsWithOffer, total_sales: totalSales.toFixed(2), total_discount_amount: totalDiscountAmount.toFixed(2) };
+
+        const getServiceIdsQuery = `
+            SELECT so.service_id, s.name AS service_name, SUM(ai.total_price_paid) AS total_sales 
+            FROM appointment_items ai 
+            INNER JOIN services_options so ON ai.service_option_id = so.id
+            INNER JOIN services s ON so.service_id = s.id
+            WHERE ai.appointment_id IN (${appointmentIds.join(',')})
+            GROUP BY so.service_id, s.name`;
+
+        const serviceIdsResult = await db.query(getServiceIdsQuery);
+
+        // Retrieve top paying customers
+        const topPayingCustomersQuery = `
+            SELECT A.user_id, U.email, U.name, SUM(A.total_amount_paid) AS total_amount_paid
+            FROM appointment AS A
+            JOIN users AS U ON A.user_id = U.id
+            WHERE A.branch_id = $1 AND A.status = $2 AND A.id IN (${appointmentIds.join(',')})
+            GROUP BY A.user_id, U.email, U.name
+            ORDER BY total_amount_paid DESC`;
+
+        const topPayingCustomers = await db.query(topPayingCustomersQuery, [branchId, enums.appointmentType.Closed]);
+
+        res.json({ success: true, data: data, most_booked_services: serviceIdsResult.rows, top_paying_customers: topPayingCustomers.rows });
+    } catch (error) {
+        console.error("Error fetching platform offer insights:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+    }
+});
+
+
+
+
 // router.post("/exit-from-platform-offer");
-// router.post("/sales-over-time-with-platform-offer",);
-// router.post("/sales-by-service-with-platform-offer",);
-// router.post("/top-paying-customers-with-platform-offer",);
+
+router.get("/sales-over-time-with-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        }
+
+        const branchId = req.query.branch_id;
+        const platformCouponId = req.query.platform_coupon_id;
+        let fromDateRange = req.query.from_date_range;
+        let toDateRange = req.query.to_date_range;
+
+        let queryParams = [branchId, enums.appointmentType.Closed, platformCouponId];
+        let query = `
+            SELECT appointment_date, COUNT(*) AS total_appointments, 
+            AVG(total_amount_paid) AS avg_paid_amount, 
+            SUM(total_amount_paid) AS total_paid_amount
+            FROM appointment
+            WHERE branch_id = $1 AND status = $2 AND id IN (
+                SELECT appointment_id FROM appointment_discount WHERE coupon_id = $3
+            )`;
+
+        if (fromDateRange && toDateRange) {
+            fromDateRange = moment(fromDateRange, "YYYY-MM-DD").format("YYYY-MM-DD");
+            toDateRange = moment(toDateRange, "YYYY-MM-DD").format("YYYY-MM-DD");
+            query += " AND appointment_date BETWEEN $4 AND $5";
+            queryParams.push(fromDateRange, toDateRange);
+        }
+
+        query += " GROUP BY appointment_date";
+
+        const appointmentsData = await db.query(query, queryParams);
+
+        // Format average paid amount and total paid amount to two decimal places
+        appointmentsData.rows.forEach(appointment => {
+            appointment.appointment_date = moment(appointment.appointment_date, "YYYY-MM-DD").format("YYYY-MM-DD");
+            appointment.avg_paid_amount = parseFloat(appointment.avg_paid_amount).toFixed(2);
+            appointment.total_paid_amount = parseFloat(appointment.total_paid_amount).toFixed(2);
+        });
+
+        res.json({ success: true, data: appointmentsData.rows });
+    } catch (error) {
+        console.error("Error fetching platform offer appointments data:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+    }
+});
+
+
+router.get("/sales-by-service-with-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+    }
+
+    const branch_id = req.query.branch_id;
+    const platform_coupon_id = req.query.platform_coupon_id;
+    let fromDateRange;
+    let toDateRange;
+
+    // If from_date_range and to_date_range provided, use them
+    if (req.query.from_date_range && req.query.to_date_range) {
+        fromDateRange = moment(req.query.from_date_range).format("YYYY-MM-DD");
+        toDateRange = moment(req.query.to_date_range).format("YYYY-MM-DD");
+    }
+
+    try {
+        const queryParams = [enums.appointmentType.Closed, branch_id, platform_coupon_id];
+        let query = `
+        SELECT 
+        S.name,
+        COUNT(*) AS "Total Appointments",
+        AVG(A.net_amount) AS "AvgAppointmentValue",
+        SUM(A.net_amount) AS "TotalSales"
+    FROM 
+        appointment A
+        INNER JOIN appointment_items AI ON A.id = AI.appointment_id 
+        INNER JOIN services_options S ON AI.service_option_id = S.id
+        INNER JOIN appointment_discount AD ON A.id = AD.appointment_id
+    WHERE 
+        A.status = $1 
+        AND A.branch_id = $2 
+        AND AD.coupon_id = $3`
+            ;
+
+        // If date range provided, add it to the query
+        if (fromDateRange && toDateRange) {
+            query += " AND A.appointment_date BETWEEN $4 AND $5"; // Filter for appointment date range
+            queryParams.push(fromDateRange, toDateRange);
+        }
+
+        query += `
+        GROUP BY 
+        S.name
+        ORDER BY 
+        S.name ASC`;
+        const queryResult = await db.query(query, queryParams);
+        const data = queryResult.rows;
+        data.forEach(element => {
+            element.AvgAppointmentValue = parseFloat(element.AvgAppointmentValue).toFixed(2);
+            element.TotalSales = parseFloat(element.TotalSales).toFixed(2);
+        });
+        res.json({ success: true, data });
+
+    } catch (error) {
+        console.error("Error fetching sales by service:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+    }
+});
+
+
+router.get("/top-paying-customers-with-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+    }
+
+    try {
+        const branch_id = req.query.branch_id;
+        const platform_coupon_id = req.query.platform_coupon_id;
+
+        let query = `
+        SELECT
+        ROW_NUMBER() OVER () AS serial_number,
+        A.user_id,
+        U.name AS name,
+        SUM(A.total_amount_paid) AS total_paid_amount,
+        COUNT(A.id) AS total_appointment
+    FROM
+        appointment A
+        JOIN users U ON A.user_id = U.id
+        JOIN appointment_discount AD ON A.id = AD.appointment_id
+    WHERE
+        A.status = $1
+        AND A.branch_id = $2
+        AND U.user_type = $3
+        AND AD.coupon_id = $4
+    `;
+        const queryParams = [enums.appointmentType.Closed, branch_id, enums.UserType.customer, platform_coupon_id];
+        let fromDateRange;
+        let toDateRange;
+
+        // If from_date_range and to_date_range provided, use them
+        if (req.query.from_date_range && req.query.to_date_range) {
+            fromDateRange = moment(req.query.from_date_range).format("YYYY-MM-DD");
+            toDateRange = moment(req.query.to_date_range).format("YYYY-MM-DD");
+            query += `AND A.appointment_date BETWEEN $5 AND $6`;
+            queryParams.push(fromDateRange);
+            queryParams.push(toDateRange);
+        }
+
+        query += `
+        GROUP BY
+            A.user_id, U.name
+        ORDER BY
+            total_paid_amount ASC;
+        `;
+        const getData = await db.query(query, queryParams);
+        res.json({ success: true, data: getData.rows })
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error"
+        })
+    }
+});
 
 
 router.post('/store-hours', jsonParser, [
@@ -1258,7 +1453,7 @@ router.post('/store-hours', jsonParser, [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation Error Occurred.", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -1309,7 +1504,7 @@ router.post('/store-hours', jsonParser, [
 router.get('/store-hours', check("branch_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation Error Occurred.", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
 
@@ -1355,7 +1550,7 @@ router.put('/update-store-hours/', jsonParser, [
 ], authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
 
     const branchId = req.body[0].branch_id;
@@ -1402,7 +1597,7 @@ router.get('/holidays', jsonParser, check('branch_id').isInt().withMessage('Bran
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         try {
@@ -1459,7 +1654,7 @@ router.post('/holidays', jsonParser, [
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const { branch_id, from_date, to_date, status } = req.body;
@@ -1490,7 +1685,7 @@ router.put('/holidays', jsonParser, [
 ], authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const { id } = req.body;
@@ -1525,9 +1720,7 @@ router.delete('/holidays',
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            res.status(500).json({
-                success: false, messaage: "Invalid value for id", errors: errors.array()
-            })
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         } else {
 
             const { id } = req.body;
@@ -1573,7 +1766,7 @@ router.post("/services",
         // res.send(req.body.service_name)
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.send(errors);
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const jsonData = req.body;
@@ -1636,7 +1829,7 @@ router.put("/services",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "Validation Error Occurred", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const serviceId = req.body.service_id;
@@ -1726,7 +1919,7 @@ router.delete("/services",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "Validation Error Occurred", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
         }
 
         const serviceIds = req.body.service_ids;
@@ -1771,7 +1964,7 @@ router.delete("/serviceoption/:option_id", check("option_id").isInt().customSani
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, messaage: "Validation Error Occurred", errors: errors.array() })
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
     }
     try {
         const id = req.params.option_id;
