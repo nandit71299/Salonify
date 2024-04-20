@@ -27,8 +27,8 @@ let transporter =
         {
             service: 'gmail',
             auth: {
-                user: 'nanditsareria@gmail.com',
-                pass: 'yefq hjde ubld xafq'
+                user: process.env.mail_id,
+                pass: `${process.env.mailPass}`
             }
         }
     );
@@ -41,47 +41,51 @@ var jsonParser = bodyParser.json();
 router.post("/sendOTP",
     check("email").isEmail(),
     async (req, res) => {
-        // IF VALIDATION ERRORS RETURN ERRORS
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
-        }
-
-        // ELSE TRY FINDING CUSTOMER WITH THE PROVIDED EMAIL
         try {
-            const email = req.body.email.toLowerCase();
-            const findCustomer = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type=$3 ", [email, enums.is_active.yes, enums.UserType.customer]);
-            // IF CONDITION TO CHECK IF CUSTOMER WITH GIVEN MAIL IS FOUND
-            if (findCustomer.rowCount > 0) {
-                const OTP = Math.floor(Math.random().toPrecision() * 100000);
-                const customer_id = findCustomer.rows[0].id;
-                try {
-                    // IF FOUND UPDATE OTP,VALIDITY AND TIMESTAMP IN THE DATABASE
-                    const result = await db.query("UPDATE users SET OTP=$1, otp_validity=20, reset_password_timestamp = now() WHERE id =$2 RETURNING *", [OTP, customer_id])
-                    //SEND OTP MAIL TO THE CUSTOMER
-                    const info = await transporter.sendMail({
-                        from: "Salonify", // sender address
-                        to: "nanditsareria@gmail.com", // reciever address
-                        subject: "Salonify: OTP to Reset your password", // Subject
-                        // text: "Hello world?", // plain text body
-                        html: "Hello, " + email + "<br>" + "Please use below mentioned OTP to reset your password. <br> <h1>" + OTP + "</h1>", // html body
-                    });
+            // Check for validation errors
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ success: false, data: [], message: "400 Bad Request", errors: errors.array() });
+            }
 
-                    res.send({
-                        message: "OTP Sent to Registered mail address..",
-                        otp: result.rows[0].otp
-                    })
-                }
-                catch (error) {
-                    res.send(error);
-                }
+            // Normalize email address
+            const email = req.body.email.toLowerCase();
+
+            // Find customer with the provided email
+            const findCustomer = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type = $3", [email, enums.is_active.yes, enums.UserType.customer]);
+
+            // If customer with the given email is found
+            if (findCustomer.rowCount > 0) {
+                // Generate OTP
+                const OTP = Math.floor(Math.random() * 100000);
+                const customer_id = findCustomer.rows[0].id;
+
+                // Update OTP, validity, and timestamp in the database
+                const result = await db.query("UPDATE users SET OTP = $1, otp_validity = 20, reset_password_timestamp = now() WHERE id = $2 RETURNING *", [OTP, customer_id]);
+
+                // Send OTP mail to the customer
+                const info = await transporter.sendMail({
+                    from: "Salonify", // Sender address
+                    to: email, // Receiver address
+                    subject: "Salonify: OTP to Reset your password", // Subject
+                    html: `Hello, ${email}<br>Please use the OTP <b>${OTP}</b> to reset your password.`, // HTML body
+                });
+
+                return res.status(200).json({
+                    success: true,
+                    message: "OTP sent to registered email address.",
+                    data: [{ otp: OTP }]
+                });
             } else {
-                res.send("OTP sent to Registered mail address.")
+                return res.status(404).json({ success: false, data: [], message: "User not found." });
             }
         } catch (error) {
-            res.send(error);
+            // Handle errors
+            console.error("Error in sendOTP route:", error);
+            return res.status(500).json({ success: false, data: [], message: "Internal Server Error", errors: error.message });
         }
     });
+
 
 router.post("/registercustomer",
     check("email").isEmail(),
@@ -94,7 +98,7 @@ router.post("/registercustomer",
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+                return res.status(400).json({ success: false, data: [], message: "400 Bad Request", errors: errors.array() });
             }
 
             const email = req.body.email.toLowerCase();
@@ -107,12 +111,12 @@ router.post("/registercustomer",
             // Check if email or phone number already exist
             const checkEmailExistence = await db.query("SELECT * FROM users WHERE email = $1 AND status = $2 AND user_type = $3", [email, enums.is_active.yes, enums.UserType.customer]);
             if (checkEmailExistence.rows.length > 0) {
-                return res.status(409).json({ message: "User with this email is already registered, please login..." });
+                return res.status(409).json({ success: false, data: [], message: "User with this email is already registered, please login..." });
             }
 
             const checkMobileExistence = await db.query("SELECT * FROM users WHERE phone_number = $1 AND status = $2 AND user_type = $3", [phone_number, enums.is_active.yes, enums.UserType.customer]);
             if (checkMobileExistence.rows.length > 0) {
-                return res.status(409).json({ message: "User with this phone number is already registered, please login..." });
+                return res.status(409).json({ success: false, data: [], message: "User with this phone number is already registered, please login..." });
             }
 
             // Hash the password
@@ -124,10 +128,10 @@ router.post("/registercustomer",
                 isSuccess = true;
             }
 
-            res.status(200).json({ isSuccess: isSuccess, id: result.rows[0].id });
+            res.status(201).json({ success: isSuccess, data: [{ id: result.rows[0].id }], message: "Customer Registered Succesfully" });
         } catch (error) {
             console.error("Error registering customer:", error);
-            res.status(500).json({ message: "Error registering customer." });
+            res.status(500).json({ success: false, data: [], message: "Internal Server Error." });
         }
     });
 
@@ -142,7 +146,8 @@ router.post("/login",
             return res.status(400).json({
                 success: false,
                 message: "400 Bad Request",
-                errors: errors.array()
+                errors: errors.array(),
+                data: []
             });
         }
 
@@ -155,61 +160,64 @@ router.post("/login",
             `, [email.toLowerCase(), enums.is_active.yes, enums.UserType.customer]);
 
             if (result.rowCount === 0) {
-                return res.status(404).json({ success: false, message: "No user found with the given email address." });
+                return res.status(404).json({ success: false, data: [], message: "No user found with the given email address." });
             }
 
             const user = result.rows[0];
             bcrypt.compare(password, user.password, (err, passwordMatch) => {
                 if (err || !passwordMatch) {
-                    return res.status(401).json({ success: false, message: "Invalid email or password." });
+                    return res.status(401).json({ success: false, data: [], message: "Invalid email or password." });
                 }
 
                 const token = jwt.sign({ user }, SecretKey, { expiresIn: '1h' });
-                return res.json({ success: true, token, id: user.id });
+                return res.status(200).json({ success: true, data: [{ token, id: user.id }], message: "OK" });
             });
         } catch (error) {
             console.error("Error in login:", error);
-            return res.status(500).json({ success: false, message: "Internal server error." });
+            return res.status(500).json({ success: false, data: [], message: "Internal Server Error." });
         }
     }
 );
 
 router.post("/updatepassword",
-    check("password").isLength({ min: 6 }),
-    check("email").isEmail(),
+    check("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters long."),
+    check("email").isEmail().withMessage("Invalid email address."),
     async (req, res) => {
         try {
+            // Validate request body
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+                return res.status(400).json({ success: false, message: "400 Bad Request", data: [], errors: errors.array() });
             }
 
+            // Normalize email address
             const email = req.body.email.toLowerCase();
             const password = req.body.password;
 
+            // Check if user exists
             const findUser = await db.query("SELECT email FROM users WHERE email = $1", [email]);
+            if (findUser.rowCount === 0) {
+                return res.status(404).json({ success: false, data: [], message: "No user found with the given email address" });
+            }
 
-            if (findUser.rowCount > 0) {
-                // Hash the new password
-                const hashedPassword = await bcrypt.hash(password, saltRounds);
+            // Hash the new password
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-                // Update the password in the database
-                const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
+            // Update the password in the database
+            const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
 
-                if (result.rowCount > 0) {
-                    return res.status(200).json({ message: "Password update successful" });
-                } else {
-                    return res.status(500).json({ message: "Error updating password" });
-                }
+            if (result.rowCount > 0) {
+                return res.status(201).json({ success: true, data: [{ id: result.rows[0].id }], message: "Password updated successfully" });
             } else {
-                return res.status(404).json({ message: "No user found with the given email address" });
+                return res.status(500).json({ success: false, data: [], message: "Error updating password" });
             }
         } catch (error) {
             console.error("Error updating password:", error);
-            return res.status(500).json({ message: "Error updating password" });
+            return res.status(500).json({ success: false, data: [], message: "Internal Server Error" });
         }
     }
 );
+
 
 router.get("/categories", authMiddleware, async (req, res) => {
     try {
@@ -218,7 +226,7 @@ router.get("/categories", authMiddleware, async (req, res) => {
 
         // Check if any categories were found
         if (dbQuery.rowCount === 0) {
-            return res.status(404).json({ success: false, message: "No categories found" });
+            return res.status(204).json({ success: false, data: [], message: "No categories found" });
         }
 
         const categories = [];
@@ -235,10 +243,10 @@ router.get("/categories", authMiddleware, async (req, res) => {
         }
 
         // Send the categories as response
-        return res.json({ success: true, data: categories });
+        return res.json({ success: true, data: categories, message: "OK" });
     } catch (error) {
         console.error("Error fetching categories:", error.message);
-        return res.status(500).json({ success: false, message: "Internal server error" });
+        return res.status(500).json({ success: false, data: [], message: "Internal server error" });
     }
 });
 
@@ -272,13 +280,13 @@ router.get('/branchesincity', authMiddleware, async (req, res) => {
         const salonBranches = await db.query(query, queryParams);
 
         if (salonBranches.rows.length === 0) {
-            return res.json({ success: true, message: 'No salons found in the specified city.', salons: [] });
+            return res.status(404).json({ success: true, message: 'No branch found in the city.', data: [] });
         }
 
-        res.json({ success: true, salons: salonBranches.rows });
+        res.json({ success: true, data: salonBranches.rows, message: "OK" });
     } catch (error) {
         console.error('Error listing salons:', error);
-        res.status(500).json({ success: false, message: 'Error listing salons.' });
+        res.status(500).json({ success: false, data: [], message: 'Internal Server Error' });
     }
 });
 
@@ -286,7 +294,7 @@ router.get('/branchesbycategory', check("category_id").isInt(), authMiddleware, 
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, data: [], message: "400 Bad Request", errors: errors.array() });
     }
 
     try {
@@ -325,15 +333,15 @@ router.get('/branchesbycategory', check("category_id").isInt(), authMiddleware, 
         }
 
         if (salons.length === 0) {
-            return res.status(404).json({ success: false, message: 'No active branches found for the specified category.' });
+            return res.status(404).json({ success: false, data: [], message: 'No active branches found for the specified category.' });
         }
 
         // Send the list of active branches as the response
 
-        res.json({ success: true, salons });
+        res.status(200).json({ success: true, data: salons, message: "OK" });
     } catch (error) {
         console.error('Error fetching active salons:', error);
-        res.status(500).json({ success: false, message: 'Error fetching active salons.' });
+        res.status(500).json({ success: false, data: [], message: 'Internal Server Error.' });
     }
 });
 
@@ -344,7 +352,7 @@ router.get("/cartcount",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const user_id = req.body.user_id;
@@ -361,16 +369,16 @@ router.get("/cartcount",
 
             if (cartDetails.rows.length === 0) {
                 // If no rows are returned, set item_count to 0
-                res.json({ success: true, item_count: 0, branch_id: null });
+                res.status(200).json({ success: true, data: [{ item_count: 0, branch_id: null }], message: "OK" });
                 return;
             }
             // Extract the item count and branch_id from the result
             const { item_count, branch_id } = cartDetails.rows[0];
 
-            res.json({ success: true, item_count, branch_id });
+            res.status(200).json({ success: true, data: [{ item_count: item_count, branch_id: branch_id }], message: "OK" });
         } catch (error) {
             console.error('Error fetching cart item count:', error);
-            res.status(500).json({ success: false, message: 'Error fetching cart item count.' });
+            res.status(500).json({ success: false, data: [], message: 'Internal Server Error.' });
         }
 
     });
@@ -386,7 +394,7 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, data: [], message: "400 Bad Request", errors: errors.array() });
     }
 
     const { searchstring, sortBy, sortOrder } = req.query;
@@ -420,9 +428,6 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
 
         let result = await db.query(query, [`%${searchstring}%`]);
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'No data found.' });
-        }
 
         // Sorting
         if (sortBy && sortOrder) {
@@ -477,10 +482,10 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
 
 
 
-        res.json({ success: true, data: searchResult });
+        res.json({ success: true, data: searchResult, message: "OK" });
     } catch (error) {
         console.error('Error fetching service details:', error);
-        res.status(500).json({ success: false, message: 'Error fetching service details.' });
+        res.status(500).json({ success: false, message: 'Internal Server Error.', data: [] });
     }
 
 });
@@ -488,7 +493,7 @@ router.get("/searchservicesorbranches", check('searchstring').isString(), authMi
 router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -498,7 +503,7 @@ router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (
         const getBranch = await db.query("SELECT * from branches WHERE id = $1", [branch_id]);
 
         if (!getBranch.rowCount > 0) {
-            return res.status(404).json({ success: false, errors: "Error Fetching Salon Details" });
+            return res.status(404).json({ success: false, errors: "Error Fetching Salon Details", data: [] });
         }
 
         const { saloon_id, name, city_id, address, type, latitude, longitude, seats, status } = getBranch.rows[0];
@@ -541,10 +546,10 @@ router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (
             }
         }
 
-        res.json({ success: true, data: data });
+        res.json({ success: true, data: data, message: "OK" });
     } catch (error) {
         console.error('Error fetching branch details:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Internal server error', data: [] });
     }
 });
 
@@ -552,7 +557,7 @@ router.get("/branchdetails", check('branch_id').isInt(), authMiddleware, async (
 router.get('/branchservices', check("id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const branch_id = req.query.id;
@@ -622,10 +627,10 @@ router.get('/branchservices', check("id").isInt(), authMiddleware, async (req, r
             }
         }
 
-        res.json({ success: true, data: departments });
+        res.json({ success: true, data: departments, message: "OK" });
     } catch (error) {
         console.error('Error fetching services:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, data: [], message: 'Internal server error' });
     }
 });
 
@@ -638,7 +643,7 @@ router.post("/add-to-cart",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const { user_id, branch_id, services } = req.body;
@@ -689,10 +694,10 @@ router.post("/add-to-cart",
 
 
 
-                    res.json({ success: true, message: "Services added to the cart successfully." });
+                    res.json({ success: true, message: "Services added to the cart successfully.", data: [] });
                 } else {
                     // Cart branch does not match the branch user is adding services for
-                    res.status(400).json({ success: false, message: "Cannot add services to cart. Cart belongs to a different branch." });
+                    res.status(400).json({ success: false, message: "Cannot add services to cart. Cart belongs to a different branch.", data: [] });
                 }
             } else {
                 // No cart exists for the user, create a new cart and add services
@@ -721,11 +726,11 @@ router.post("/add-to-cart",
                 WHERE id = $1
             `, [cartId]);
 
-                res.json({ success: true, message: "Cart created and services added successfully." });
+                res.json({ success: true, message: "Cart created and services added successfully.", data: [] });
             }
         } catch (error) {
             console.error("Error adding services to cart:", error);
-            res.status(500).json({ success: false, message: "Error adding services to cart." });
+            res.status(500).json({ success: false, message: "Internal Server Error.", data: [] });
         }
     });
 
@@ -738,7 +743,7 @@ router.delete("/remove-from-cart",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const { user_id, branch_id } = req.body;
@@ -770,14 +775,14 @@ router.delete("/remove-from-cart",
                 WHERE id = $1
             `, [cartId]);
 
-                res.json({ success: true, message: "Cart item removed successfully." });
+                res.json({ success: true, message: "Cart item removed successfully.", data: [] });
             } else {
                 // Cart item not found or does not belong to the specified user and branch
-                res.status(404).json({ success: false, message: "Cart item not found or does not belong to the specified user and branch." });
+                res.status(404).json({ success: false, message: "Cart item not found or does not belong to the specified user and branch.", data: [] });
             }
         } catch (error) {
             console.error("Error removing cart item:", error);
-            res.status(500).json({ success: false, message: "Error removing cart item." });
+            res.status(500).json({ success: false, message: "Internal Server Error.", data: [] });
         }
     });
 
@@ -788,7 +793,7 @@ router.delete('/cartdeleteall',
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
         const userId = req.body.user_id;
 
@@ -813,11 +818,11 @@ router.delete('/cartdeleteall',
 
             await db.query('COMMIT');
 
-            res.json({ success: true, message: 'Cart deleted successfully.' });
+            res.json({ success: true, message: 'Cart deleted successfully.', data: [] });
         } catch (error) {
             await db.query('ROLLBACK');
             console.error('Error deleting cart:', error);
-            res.status(500).json({ success: false, message: 'Error deleting cart.' });
+            res.status(500).json({ success: false, message: 'Internal Server Error.', data: [] });
         }
     });
 
@@ -825,7 +830,7 @@ router.delete('/cartdeleteall',
 router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appointment_date").isDate(), body('services').isArray(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -835,9 +840,10 @@ router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appoin
 
         const getBranchHours = await db.query("SELECT start_time, end_time FROM branch_hours WHERE branch_id = $1 AND day =$2 ", [branch_id, weekdayName]);
         if (getBranchHours.rows.length === 0) {
-            return res.json({
+            return res.status(409).json({
                 success: false,
                 message: "Branch is closed on the selected day.",
+                data: []
             });
         }
 
@@ -869,7 +875,15 @@ router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appoin
 
         for (const element of req.body.services) {
             const service_id = element.service_id;
-            const getServiceDuration = await db.query("SELECT duration FROM services_options WHERE id = $1", [service_id]);
+            const getServiceDuration = await db.query("select duration,services_options.id as id,services.branch_id from services_options join services on services_options.service_id = services.id WHERE branch_id = $1 AND services.status = $2 AND services_options.id = $3", [branch_id, enums.is_active.yes, service_id]);
+            if (getServiceDuration.rowCount === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Could'nt find one or more services.",
+                    data: []
+                })
+                break;
+            }
             const serviceDuration = parseInt(getServiceDuration.rows[0].duration);
             getServiceTotalDuration += serviceDuration;
         }
@@ -932,14 +946,17 @@ router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appoin
         return res.json({
             success: true,
             message: "Appointment slots generated successfully.",
-            available_slots: availableSlots,
-            unavailable_slots: unavailableSlots
+            data: [{
+                available_slots: availableSlots,
+                unavailable_slots: unavailableSlots
+            }]
         });
     } catch (error) {
         console.error("Error generating appointment slots:", error);
         return res.status(500).json({
             success: false,
-            message: "Error generating appointment slots."
+            message: "Internal Server Error",
+            data: []
         });
     }
 });
@@ -947,7 +964,7 @@ router.get('/branchvacancy', jsonParser, body('branch_id').isInt(), body("appoin
 router.get("/branchoffers", check("branch_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -973,12 +990,12 @@ router.get("/branchoffers", check("branch_id").isInt(), authMiddleware, async (r
         }
 
 
-        res.json({ success: true, data: data });
+        res.json({ success: true, data: data, message: "OK" });
 
 
     } catch (error) {
 
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
 
     }
 
@@ -1002,7 +1019,7 @@ router.post("/bookappointment",
         const errors = validationResult(req);
 
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         try {
@@ -1030,7 +1047,8 @@ router.post("/bookappointment",
                 } else {
                     return res.status(400).json({
                         success: false,
-                        message: "Error applying discount coupon..."
+                        message: "Error applying discount coupon...",
+                        data: [],
                     });
                 }
             }
@@ -1041,9 +1059,10 @@ router.post("/bookappointment",
             // Query branch hours for the appointment weekday
             const branchHoursQuery = await db.query("SELECT start_time, end_time, status FROM branch_hours WHERE branch_id = $1 AND day = $2", [branch_id, appointmentWeekday]);
             if (branchHoursQuery.rowCount === 0) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: "Salon is not open on the selected appointment day."
+                    message: "Salon is not open on the selected appointment day.",
+                    data: []
                 });
             }
 
@@ -1051,14 +1070,15 @@ router.post("/bookappointment",
             const appointmentDateTime = new Date(`${appointment_date} ${start_time}`);
             const checkHolidayQuery = await db.query("SELECT id FROM holiday_hours WHERE branch_id = $1 AND $2 BETWEEN from_date AND to_date AND status = 1", [branch_id, appointmentDateTime]);
             if (checkHolidayQuery.rowCount > 0) {
-                return res.status(400).json({ success: false, message: "The salon is closed for holiday on the selected appointment date." });
+                return res.status(409).json({ success: false, message: "The salon is closed for holiday on the selected appointment date." });
             }
             // Check if the salon is closed on the selected appointment day
             const branchStatus = branchHoursQuery.rows[0].status;
             if (branchStatus === 0) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: "Salon is closed on the selected appointment day."
+                    message: "Salon is closed on the selected appointment day.",
+                    data: []
                 });
             }
 
@@ -1075,9 +1095,10 @@ router.post("/bookappointment",
 
             // Check if the appointment start time is outside of store hours
             if (momentAppointmentStartTime.isBefore(momentStoreStartTime) || momentAppointmentStartTime.isAfter(momentStoreEndTime)) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: "Appointment time is outside of store hours."
+                    message: "Appointment time is outside of store hours.",
+                    data: []
                 });
             }
 
@@ -1111,9 +1132,10 @@ router.post("/bookappointment",
             }
 
             if (availableSeat === 0) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: "No available seats for the given time slot."
+                    message: "No available seats for the given time slot.",
+
                 });
             }
 
@@ -1154,15 +1176,19 @@ router.post("/bookappointment",
             res.json({
                 success: true,
                 message: "Appointment booked successfully.",
-                data: updateAppointment.rows[0],
-                advance_amount: parseFloat(`${advance_amount}`).toFixed(2)
+                data:
+                    [{
+                        appointment: updateAppointment.rows[0],
+                        advance_amount: parseFloat(`${advance_amount}`).toFixed(2)
+                    }]
             });
         } catch (error) {
             await db.query('ROLLBACK');
             console.error("Error making request:", error);
             res.status(500).json({
                 success: false,
-                message: "Error making request."
+                message: "Error making request.",
+                data: []
             });
         }
     });
@@ -1175,7 +1201,7 @@ router.put("/confirm-appointment",
         // Validate request parameters
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         try {
@@ -1201,7 +1227,7 @@ router.put("/confirm-appointment",
 
             if (getAppointment.rowCount === 0) {
                 await db.query('ROLLBACK');
-                return res.status(404).json({ success: false, message: "Appointment not found." });
+                return res.status(404).json({ success: false, message: "Appointment not found.", data: [] });
             }
 
             const existingPaidAmount = getAppointment.rows[0].total_amount_paid;
@@ -1214,7 +1240,7 @@ router.put("/confirm-appointment",
 
             if (updateAppointment.rowCount === 0) {
                 await db.query('ROLLBACK');
-                return res.status(404).json({ success: false, message: "Appointment not found." });
+                return res.status(404).json({ success: false, message: "Appointment not found.", data: [] });
             }
 
             // Fetch the service items associated with the appointment
@@ -1222,7 +1248,7 @@ router.put("/confirm-appointment",
 
             if (getAppointmentItems.rowCount === 0) {
                 await db.query('ROLLBACK');
-                return res.status(404).json({ success: false, message: "Error Fetching Appointment Items." });
+                return res.status(404).json({ success: false, message: "Error Fetching Appointment Items.", data: [] });
             }
 
             if (getAppointmentItems.rowCount > 0) {
@@ -1240,19 +1266,19 @@ router.put("/confirm-appointment",
             // Commit the transaction
             await db.query("COMMIT");
 
-            return res.status(200).json({ success: true, message: "Appointment confirmed and total amount paid updated." });
+            return res.status(200).json({ success: true, message: "Appointment confirmed and total amount paid updated.", data: [] });
         } catch (error) {
             // Rollback the transaction in case of an error
             await db.query('ROLLBACK');
             console.error("Error making request:", error);
-            return res.status(500).json({ success: false, message: "Error making request." });
+            return res.status(500).json({ success: false, message: "Internal Server Error.", data: [] });
         }
     });
 
 router.get("/bookingshistory", check("user_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const user_id = req.body.user_id;
@@ -1324,17 +1350,17 @@ router.get("/bookingshistory", check("user_id").isInt(), authMiddleware, async (
             }
         }
 
-        res.json({ success: true, data });
+        res.json({ success: true, data: data, message: "OK" });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, errors: error });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
 router.put("/servicewishlist", check('user_id').isInt(), check('type_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const { user_id, type_id } = req.body;
@@ -1374,17 +1400,17 @@ router.put("/servicewishlist", check('user_id').isInt(), check('type_id').isInt(
             );
         }
 
-        res.json({ success: true, status: statusToUpdate });
+        res.json({ success: true, data: [{ status: statusToUpdate }], message: "OK" });
     } catch (error) {
         console.error('Error updating wishlist:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Internal server error', data: [] });
     }
 });
 
 router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const { user_id, type_id } = req.body;
@@ -1424,10 +1450,10 @@ router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), 
             );
         }
 
-        res.json({ success: true, status: statusToUpdate });
+        res.json({ success: true, data: [{ status: statusToUpdate }], message: "OK" });
     } catch (error) {
         console.error('Error updating wishlist:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Internal server error', data: [] });
     }
 });
 
@@ -1437,7 +1463,7 @@ router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), 
 router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const appointmentId = req.query.appointment_id;
@@ -1447,7 +1473,7 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddlewar
         const appointment = appointmentDetails.rows[0];
 
         if (appointmentDetails.rowCount === 0) {
-            return res.status(404).json({ success: false, message: "Appoitment not found" })
+            return res.status(404).json({ success: false, message: "Appoitment not found", data: [] })
         }
 
         // Fetch Branch Details
@@ -1500,17 +1526,17 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddlewar
             }
         });
 
-        res.json({ success: true, data: data });
+        res.json({ success: true, data: data, message: "OK" });
     } catch (error) {
         console.error("Error fetching appointment details:", error);
-        res.status(500).json({ success: false, error: "Internal server error" });
+        res.status(500).json({ success: false, message: "Internal server error", data: [] });
     }
 });
 
 router.get("/cancellationsummary", check("appointment_id"), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         // Initialize data object to store appointment, service, and refund details
@@ -1579,11 +1605,11 @@ router.get("/cancellationsummary", check("appointment_id"), authMiddleware, asyn
             data.cancellation_reasons.push(iterator)
         }
         // Send the data object as the response
-        res.status(200).json(data);
+        res.status(200).json({ success: true, data: data, message: "OK" });
     } catch (error) {
         // Handle any errors
         console.error(error);
-        res.status(500).json({ success: false, errors: "Internal server error" });
+        res.status(500).json({ success: false, message: "Internal server error", data: [] });
     }
 });
 
@@ -1591,7 +1617,7 @@ router.get("/cancellationsummary", check("appointment_id"), authMiddleware, asyn
 router.put("/rescheduleappointment", check("appointment_id").isInt(), check("newDate").isDate(), check("newStartTime").isTime(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const { appointment_id, newDate } = req.query;
@@ -1616,7 +1642,7 @@ router.put("/rescheduleappointment", check("appointment_id").isInt(), check("new
         );
 
         if (!isRescheduleable) {
-            return res.status(400).json({ success: false, message: "Appointment is not eligible for Rescheduling..." });
+            return res.status(403).json({ success: false, message: "Appointment is not eligible for Rescheduling...", data: [] });
         }
 
         // Calculate new end time
@@ -1630,7 +1656,7 @@ router.put("/rescheduleappointment", check("appointment_id").isInt(), check("new
         const appointmentWeekday = moment(newDate).format('dddd').toLowerCase();
         const branchHoursQuery = await db.query("SELECT start_time, end_time FROM branch_hours WHERE branch_id = $1 AND day = $2", [appointmentDetails.branch_id, appointmentWeekday]);
         if (branchHoursQuery.rowCount === 0) {
-            return res.status(400).json({ success: false, message: "Salon is not open on the selected appointment day." });
+            return res.status(403).json({ success: false, message: "Salon is not open on the selected appointment day." });
         }
 
         const storeStartTime = branchHoursQuery.rows[0].start_time;
@@ -1640,7 +1666,7 @@ router.put("/rescheduleappointment", check("appointment_id").isInt(), check("new
         const momentAppointmentStartTime = moment(newStartTime, 'HH:mm');
 
         if (momentAppointmentStartTime.isBefore(momentStoreStartTime) || momentAppointmentStartTime.isAfter(momentStoreEndTime)) {
-            return res.status(400).json({ success: false, message: "Appointment time is outside of store hours." });
+            return res.status(403).json({ success: false, message: "Appointment time is outside of store hours." });
         }
 
         // Check for available seats
@@ -1658,23 +1684,23 @@ router.put("/rescheduleappointment", check("appointment_id").isInt(), check("new
         }
 
         if (availableSeat === 0) {
-            return res.status(400).json({ success: false, message: "No available seats for the given time slot." });
+            return res.status(409).json({ success: false, message: "No available seats for the given time slot." });
         }
 
         // Update the appointment
         const updateAppointment = await db.query("UPDATE appointment SET appointment_date = $1, start_time = $2, end_time = $3, is_rescheduled = 1 , seat_number = $4, updated_at = now()  WHERE id = $5 RETURNING *", [newDate, newStartTime, newEndTime, availableSeat, appointment_id]);
 
-        res.json({ success: true, message: "Appointment Succefully Re-scheduled.", data: updateAppointment.rows })
+        res.json({ success: true, message: "OK", data: updateAppointment.rows })
     } catch (error) {
         console.error("Error in rescheduling appointment:", error);
-        res.status(500).json({ success: false, message: "An error occurred while rescheduling the appointment." });
+        res.status(500).json({ success: false, message: "Internal Server Error." });
     }
 });
 
 router.get("/wishlisteditems", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
 
@@ -1713,6 +1739,11 @@ router.get("/wishlisteditems", check("user_id").isInt(), async (req, res) => {
         res.json({ success: true, data: data })
     } catch (error) {
         console.log(error)
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            data: []
+        })
     }
 })
 
@@ -1723,7 +1754,7 @@ router.get("/customerprofile", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -1741,7 +1772,7 @@ router.get("/customerprofile", check("user_id").isInt(), async (req, res) => {
 
         res.json({ success: true, data: getUserDetails.rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Internal Server Error" })
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] })
     }
 
 });
@@ -1751,7 +1782,7 @@ router.post("/customerprofile", check("user_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -1769,7 +1800,7 @@ router.post("/customerprofile", check("user_id").isInt(), async (req, res) => {
 
         res.json({ success: true, data: getUserDetails.rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Internal Server Error" })
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] })
     }
 
 });

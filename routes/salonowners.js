@@ -41,7 +41,7 @@ router.post("/registersalon",
     check("personalName").trim().isString(),
     check("personalPhone").trim().isMobilePhone(),
     check("image").isBase64(),
-    check("salon_name").trim().isAlphanumeric(),
+    check("salon_name").trim().isString(),
     check("contact_number").trim().isNumeric(),
     check("salonDescription").trim().isString(),
     check("location").trim().isAlphanumeric(),
@@ -51,7 +51,7 @@ router.post("/registersalon",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const {
@@ -103,7 +103,7 @@ router.post("/registersalon",
 
             await db.query("COMMIT");
 
-            return res.status(200).json({ success: true, message: "Salon registered successfully." });
+            return res.status(200).json({ success: true, message: "Salon registered successfully.", data: [{ id: registerBranch.rows[0].id }] });
         } catch (error) {
             await db.query("ROLLBACK");
             console.error("Error registering salon:", error);
@@ -117,7 +117,7 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     const { email, password } = req.body;
 
@@ -149,7 +149,7 @@ router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const email = req.body.email.toLowerCase();
@@ -190,7 +190,7 @@ router.post("/updatepassword",
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+                return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
             }
 
             const email = req.body.email.toLowerCase();
@@ -224,7 +224,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const user_id = req.query.user_id;
@@ -274,7 +274,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
 router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         let from_date_range = moment();
@@ -330,7 +330,7 @@ router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), chec
 router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         let from_date_range = moment().format("YYYY-MM-DD");
@@ -371,7 +371,7 @@ router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_dat
 router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -445,7 +445,7 @@ router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("fro
 router.get("/toppayingcustomers", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -498,7 +498,7 @@ router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("f
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -561,7 +561,7 @@ router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("f
 router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -601,7 +601,7 @@ router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_
 router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -644,7 +644,7 @@ router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date
 router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -702,7 +702,7 @@ router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_
 router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -747,7 +747,7 @@ router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, 
 router.get("/service/:service_id", check('service_id').isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const service_id = req.params.service_id;
@@ -782,7 +782,7 @@ router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (r
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const branch_id = req.query.branch_id;
@@ -886,7 +886,7 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
         // Validate request parameters
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         // Extract appointment_id from request query
@@ -1013,7 +1013,7 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
     // Validate request parameters
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const branch_id = req.query.branch_id;
@@ -1064,7 +1064,7 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
 router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const branch_id = req.query.branch_id;
@@ -1109,7 +1109,7 @@ router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
 router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const branch_id = req.body.branch_id;
@@ -1151,7 +1151,7 @@ router.get("/platform-offer-insights", check("branch_id").isInt(), check("platfo
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const branchId = req.query.branch_id;
@@ -1247,7 +1247,7 @@ router.get("/sales-over-time-with-platform-offer", check("branch_id").isInt(), c
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const branchId = req.query.branch_id;
@@ -1294,7 +1294,7 @@ router.get("/sales-over-time-with-platform-offer", check("branch_id").isInt(), c
 router.get("/sales-by-service-with-platform-offer", check("branch_id").isInt(), check("platform_coupon_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branch_id = req.query.branch_id;
@@ -1357,7 +1357,7 @@ router.get("/top-paying-customers-with-platform-offer", check("branch_id").isInt
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -1453,7 +1453,7 @@ router.post('/store-hours', jsonParser, [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     try {
@@ -1504,7 +1504,7 @@ router.post('/store-hours', jsonParser, [
 router.get('/store-hours', check("branch_id").isInt(), async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
 
@@ -1550,7 +1550,7 @@ router.put('/update-store-hours/', jsonParser, [
 ], authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
 
     const branchId = req.body[0].branch_id;
@@ -1597,7 +1597,7 @@ router.get('/holidays', jsonParser, check('branch_id').isInt().withMessage('Bran
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         try {
@@ -1654,7 +1654,7 @@ router.post('/holidays', jsonParser, [
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const { branch_id, from_date, to_date, status } = req.body;
@@ -1685,7 +1685,7 @@ router.put('/holidays', jsonParser, [
 ], authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const { id } = req.body;
@@ -1720,7 +1720,7 @@ router.delete('/holidays',
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         } else {
 
             const { id } = req.body;
@@ -1766,7 +1766,7 @@ router.post("/services",
         // res.send(req.body.service_name)
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const jsonData = req.body;
@@ -1829,7 +1829,7 @@ router.put("/services",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const serviceId = req.body.service_id;
@@ -1919,7 +1919,7 @@ router.delete("/services",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         }
 
         const serviceIds = req.body.service_ids;
@@ -1964,7 +1964,7 @@ router.delete("/serviceoption/:option_id", check("option_id").isInt().customSani
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array() });
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const id = req.params.option_id;
@@ -1991,7 +1991,7 @@ router.get("/getServiceCreationDetails", authMiddleware, async (req, res) => {
         res.status(200).json({ department: department, categories: categories });
     }
     catch (error) {
-        res.status(400).json(error);
+        res.status(500).json(error);
     }
 })
 
