@@ -2,7 +2,7 @@ import express, { query } from "express";
 import bodyParser from "body-parser";
 import db from "../database.js";
 import axios from "axios";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import authMiddleware from '../middleware/authMiddleware.js';
 import { check, body, validationResult, param } from 'express-validator';

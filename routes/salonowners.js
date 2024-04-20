@@ -1,7 +1,8 @@
 import express, { application, response } from "express";
 import bodyParser from "body-parser";
 import db from "../database.js";
-import bcrypt, { compareSync } from "bcrypt";
+// import bcrypt, { compareSync } from "bcrypt";
+import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken";
 import authMiddleware from '../middleware/authMiddleware.js';
 import { check, body, validationResult, header } from 'express-validator';
