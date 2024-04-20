@@ -83,11 +83,11 @@ router.post("/registersalon",
             ]);
 
             if (emailExistence.rowCount > 0) {
-                return res.status(400).json({ success: false, message: "A user is already registered with this email address." });
+                return res.status(409).json({ success: false, message: "A user is already registered with this email address.", data: [] });
             }
 
             if (phoneExistence.rowCount > 0) {
-                return res.status(400).json({ success: false, message: "A user is already registered with this phone number." });
+                return res.status(409).json({ success: false, message: "A user is already registered with this phone number.", data: [] });
             }
 
             const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -104,11 +104,11 @@ router.post("/registersalon",
 
             await db.query("COMMIT");
 
-            return res.status(200).json({ success: true, message: "Salon registered successfully.", data: [{ id: registerBranch.rows[0].id }] });
+            return res.status(201).json({ success: true, message: "Salon registered successfully.", data: [{ branch_id: registerBranch.rows[0].id }] });
         } catch (error) {
             await db.query("ROLLBACK");
             console.error("Error registering salon:", error);
-            return res.status(500).json({ success: false, message: "Error registering salon." });
+            return res.status(500).json({ success: false, message: "Error registering salon.", data: [] });
         }
     });
 
@@ -127,7 +127,7 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
 
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ success: false, message: "No user found with the given email address." });
+            return res.status(404).json({ success: false, message: "No user found with the given email address.", data: [] });
         }
 
 
@@ -135,14 +135,14 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
         const getBranchDetails = await db.query('select * from branches where saloon_id = (select id from saloon where user_id = $1)', [user.id]);
         bcrypt.compare(password, user.password, (err, passwordMatch) => {
             if (err || !passwordMatch) {
-                return res.status(401).json({ success: false, message: "Invalid email or password." });
+                return res.status(401).json({ success: false, message: "Invalid email or password.", data: [] });
             }
             const token = jwt.sign({ user }, SecretKey, { expiresIn: '1h' });
             return res.json({ success: true, token, id: user.id, branch_id: getBranchDetails.rows[0].id });
         });
     } catch (error) {
         console.error("Error in login:", error);
-        return res.status(500).json({ success: false, message: "Internal server error." });
+        return res.status(500).json({ success: false, message: "Internal server error.", data: [] });
     }
 });
 
@@ -165,7 +165,7 @@ router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
                 db.query("UPDATE users SET OTP=$1, otp_validity=20, reset_password_timestamp = now() WHERE id =$2 RETURNING *", [OTP, customer_id]),
                 transporter.sendMail({
                     from: "Salonify",
-                    to: "nanditsareria@gmail.com",
+                    to: `${email}`,
                     subject: "Salonify: OTP to Reset your password",
                     html: `Hello, ${email}<br>Please use below mentioned OTP to reset your password.<br><h1>${OTP}</h1>`
                 })
@@ -174,13 +174,13 @@ router.post("/sendOTP", check("email").isEmail(), async (req, res) => {
             return res.json({
                 success: true,
                 message: "OTP Sent to Registered mail address.",
-                otp: updateResult.rows[0].otp
+                data: ({ otp: updateResult.rows[0].otp })
             });
         } else {
-            return res.json({ success: true, message: "OTP sent to Registered mail address." });
+            return res.json({ success: true, message: "OTP sent to Registered mail address.", data: [] });
         }
     } catch (error) {
-        res.json({ success: false, messaage: "Internal Server Error Occurred." });
+        res.json({ success: false, message: "Internal Server Error Occurred.", data: [] });
     }
 });
 
@@ -207,16 +207,16 @@ router.post("/updatepassword",
                 const result = await db.query("UPDATE users SET password = $1, reset_password_timestamp = now() WHERE email = $2 RETURNING *", [hashedPassword, email]);
 
                 if (result.rowCount > 0) {
-                    return res.status(200).json({ success: true, message: "Password update successful" });
+                    return res.status(200).json({ success: true, message: "Password Updated Successfully", data: [] });
                 } else {
-                    return res.status(500).json({ success: false, message: "Error updating password" });
+                    return res.status(500).json({ success: false, message: "Error updating password", data: [] });
                 }
             } else {
-                return res.status(404).json({ success: false, message: "No user found with the given email address" });
+                return res.status(404).json({ success: false, message: "No user found with the given email address", data: [] });
             }
         } catch (error) {
             console.error("Error updating password:", error);
-            return res.status(500).json({ success: true, message: "Error updating password" });
+            return res.status(500).json({ success: true, message: "Error updating password", data: [] });
         }
     }
 );
@@ -235,7 +235,8 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
         if (getUserInfo.rowCount === 0) {
             return res.status(404).json({
                 success: false,
-                message: "User not found."
+                message: "User not found.",
+                data: []
             });
         }
         const userInfo = getUserInfo.rows[0];
@@ -261,11 +262,12 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
             offerbannertoshow: offerbannertoshow
         };
 
-        res.json({ success: true, data });
+        res.json({ success: true, data: data, message: "OK" });
     } catch (error) {
         console.error("Error in dashboard route:", error);
         res.status(500).json({
             success: false,
+            data: [],
             message: "Internal server error."
         });
     }
@@ -320,11 +322,12 @@ router.get("/appoitmentanalyticswithdaterange", check("branch_id").isInt(), chec
                 completed: completedAppointments,
                 cancelled: cancelledAppointments,
                 expectedSales: expectedSales
-            }
+            },
+            message: "OK"
         });
     } catch (error) {
         console.log(error)
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
@@ -355,14 +358,16 @@ router.get("/paymentswithdaterange", check("branch_id").isInt(), check("from_dat
             success: true,
             data: {
                 netSales: netSales,
-                message: `${closedAppointments} Closed Appointments`
-            }
+                closed_appointments: `${closedAppointments} Closed Appointments`
+            },
+            message: "OK"
         })
     } catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            message: "Internal Server Error Occured",
+            data: []
         });
     }
 
@@ -430,13 +435,13 @@ router.get("/serviceanalyticswithfilter", check("branch_id").isInt(), check("fro
 
         const result = getResult.rows;
 
-        res.json({ success: true, data: result })
+        res.json({ success: true, data: result, message: "OK" })
 
     } catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured."
+            message: "Internal Server Error Occured.", data: []
         })
     }
 
@@ -487,10 +492,11 @@ router.get("/toppayingcustomers", check("branch_id").isInt(), check("from_date_r
         res.json({
             success: true,
             data: topPayingCustomers,
+            message: "OK"
         })
 
     } catch (error) {
-
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] })
     }
 });
 
@@ -546,14 +552,16 @@ router.get("/detailedappointmentanalytics", check("branch_id").isInt(), check("f
             data: {
                 figures: getFigures.rows,
                 sales: getSalesOverTime.rows,
-            }
+            },
+            message: "OK"
         })
 
     } catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured."
+            message: "Internal Server Error Occured.",
+            data: []
         })
     }
 
@@ -589,12 +597,13 @@ router.get("/salesovertimereport", check("branch_id").isInt(), check("from_date_
         `, [from_date_range, to_date_range, branch_id, enums.appointmentType.Closed]);
 
         const result = query.rows
-        res.json({ success: true, result })
+        res.json({ success: true, data: result, message: "OK" })
     } catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            message: "Internal Server Error Occured",
+            data: []
         })
     }
 });
@@ -630,14 +639,15 @@ router.get("/salesbyservicereport", check("branch_id").isInt(), check("from_date
         ORDER BY S.name ASC;
         `, [enums.appointmentType.Closed, branch_id, from_date_range, to_date_range,]);
         const data = query.rows
-        res.json({ success: true, data });
+        res.json({ success: true, data: data, message: "OK" });
 
     }
     catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            message: "Internal Server Error Occured",
+            data: []
         })
     }
 });
@@ -687,7 +697,8 @@ router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_
 
         res.json({
             success: true,
-            data: result.rows
+            data: result.rows,
+            message: "OK"
         })
 
     }
@@ -695,7 +706,8 @@ router.get("/toppayingcustomersreport", check("branch_id").isInt(), check("from_
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            message: "Internal Server Error Occured",
+            data: []
         })
     }
 });
@@ -733,14 +745,15 @@ router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, 
 
 
 
-        res.json({ success: true, data })
+        res.json({ success: true, data: data, message: "OK" })
 
     }
     catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            message: "Internal Server Error Occured",
+            data: []
         })
     }
 });
@@ -758,7 +771,8 @@ router.get("/service/:service_id", check('service_id').isInt(), authMiddleware, 
         if (getServiceDetails.rowCount === 0) {
             return res.status(404).json({
                 success: false,
-                messaage: "Service Not Found."
+                message: "Service Not Found.",
+                data: []
             })
         }
         const getServiceOptions = await db.query("SELECT * from services_options WHERE service_id = $1 AND status = $2;", [service_id, enums.is_active.yes]);
@@ -767,14 +781,15 @@ router.get("/service/:service_id", check('service_id').isInt(), authMiddleware, 
 
         const data = { service_details: [getServiceDetails.rows[0]], services_options: getServiceOptions.rows, additional_information: getServiceAdditionalInformations.rows }
 
-        res.json({ success: true, data });
+        res.json({ success: true, data: data, message: "OK" });
 
     }
     catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error Occured"
+            data: [],
+            message: "Internal Server Error Occured"
         })
     }
 });
@@ -821,6 +836,7 @@ router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (r
             return res.status(404).json({
                 success: true,
                 message: "No Appointments Found",
+                data: []
             });
         }
 
@@ -872,24 +888,24 @@ router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (r
             };
         });
 
-        res.json({ success: true, total_appointments, data: { appointments: formattedAppointments } });
+        res.json({ success: true, total_appointments: total_appointments, data: { appointments: formattedAppointments }, message: "OK" });
     } catch (error) {
         console.error("Error fetching appointments:", error);
         res.status(500).json({
             success: false,
-            message: "Internal Server Error Occurred"
+            message: "Internal Server Error Occurred", data: []
         });
     }
 });
 
 router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, res) => {
-    try {
-        // Validate request parameters
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
-        }
+    // Validate request parameters
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+    }
 
+    try {
         // Extract appointment_id from request query
         const appointment_id = req.query.appointment_id;
 
@@ -899,7 +915,7 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
             // If appointment not found, return 404 response
             return res.status(404).json({
                 success: false,
-                message: "Appointment not found."
+                message: "Appointment not found.", data: []
             });
         }
 
@@ -935,7 +951,8 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
                 // If service option not found, return 404 response
                 return res.status(404).json({
                     success: false,
-                    message: "Service not found."
+                    message: "Service not found.",
+                    data: []
                 });
             }
             const { service_id, name } = getServiceOptionDetails.rows[0];
@@ -997,15 +1014,17 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
                 },
                 services_details: services,
                 payment_info: payment_info,
-                transaction_info: transaction_info
-            }
+                transaction_info: transaction_info,
+            },
+            message: "OK"
         });
     } catch (error) {
         // Handle unexpected errors
         console.error("Error fetching appointment details:", error);
         res.status(500).json({
             success: false,
-            message: "Internal Server Error Occurred"
+            message: "Internal Server Error Occurred",
+            data: []
         });
     }
 });
@@ -1023,7 +1042,8 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
         if (getBranchDetails.rowCount === 0) {
             return res.json({
                 success: false,
-                messaage: "Salon/Branch not found."
+                message: "Salon/Branch not found.",
+                data: []
             })
         }
         const branchDetails = getBranchDetails.rows[0];
@@ -1048,7 +1068,8 @@ router.get("/salonprofiledetails", check("branch_id"), async (req, res) => {
                 seats: seats,
                 latitude: latitude,
                 longitude: longitude
-            }
+            },
+            message: "OK"
         })
 
     } catch (error) {
@@ -1084,6 +1105,7 @@ router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
 
             data.push({
                 id: offer.id,
+                //TODO
                 // name:offer.name,
                 discount_amount: offer.discount_amount,
                 remark: offer.remark,
@@ -1096,13 +1118,15 @@ router.get("/platform-offers", check("branch_id").isInt(), async (req, res) => {
 
         res.json({
             success: true,
-            data: data
+            data: data,
+            message: "OK"
         })
     } catch (error) {
         console.log(error);
         res.json({
             success: false,
-            message: "Internal Server Error"
+            message: "Internal Server Error",
+            data: []
         })
     }
 });
@@ -1119,7 +1143,8 @@ router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_
         if (checkPlatformCouponStatus.rowCount === 0) {
             return res.status(404).json({
                 success: false,
-                message: "Platform Coupon Not Found."
+                message: "Platform Coupon Not Found.",
+                data: [],
             })
         }
 
@@ -1130,12 +1155,14 @@ router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_
 
             res.status(201).json({
                 success: true,
-                message: "Successfully joined the offer."
+                message: "Successfully joined the offer.",
+                data: []
             })
         } else {
-            return res.status(404).json({
+            return res.status(409).json({
                 success: false,
-                messaage: "Already Participated."
+                message: "Already Participated.",
+                data: []
             })
         }
 
@@ -1143,7 +1170,8 @@ router.post("/join-platform-offer", check("branch_id").isInt(), check("platform_
         console.log(error);
         res.status(500).json({
             success: false,
-            messaage: "Internal Server Error"
+            message: "Internal Server Error",
+            data: []
         })
     }
 });
@@ -1232,10 +1260,14 @@ router.get("/platform-offer-insights", check("branch_id").isInt(), check("platfo
 
         const topPayingCustomers = await db.query(topPayingCustomersQuery, [branchId, enums.appointmentType.Closed]);
 
-        res.json({ success: true, data: data, most_booked_services: serviceIdsResult.rows, top_paying_customers: topPayingCustomers.rows });
+        res.json({
+            success: true,
+            data: { appointmentments_with_offer: data.appointments_with_offer, total_sales: data.total_sales, total_discount_amount: data.total_discount_amount, most_booked_services: serviceIdsResult.rows, top_paying_customers: topPayingCustomers.rows },
+            message: "OK"
+        });
     } catch (error) {
         console.error("Error fetching platform offer insights:", error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
@@ -1284,10 +1316,10 @@ router.get("/sales-over-time-with-platform-offer", check("branch_id").isInt(), c
             appointment.total_paid_amount = parseFloat(appointment.total_paid_amount).toFixed(2);
         });
 
-        res.json({ success: true, data: appointmentsData.rows });
+        res.json({ success: true, data: appointmentsData.rows, message: "OK" });
     } catch (error) {
         console.error("Error fetching platform offer appointments data:", error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
@@ -1345,11 +1377,11 @@ router.get("/sales-by-service-with-platform-offer", check("branch_id").isInt(), 
             element.AvgAppointmentValue = parseFloat(element.AvgAppointmentValue).toFixed(2);
             element.TotalSales = parseFloat(element.TotalSales).toFixed(2);
         });
-        res.json({ success: true, data });
+        res.json({ success: true, data: data, message: "OK" });
 
     } catch (error) {
         console.error("Error fetching sales by service:", error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
@@ -1402,13 +1434,14 @@ router.get("/top-paying-customers-with-platform-offer", check("branch_id").isInt
             total_paid_amount ASC;
         `;
         const getData = await db.query(query, queryParams);
-        res.json({ success: true, data: getData.rows })
+        res.json({ success: true, data: getData.rows, message: "OK" })
 
     } catch (error) {
         console.log(error);
         res.status(500).json({
             success: false,
-            message: "Internal Server Error"
+            message: "Internal Server Error",
+            data: []
         })
     }
 });
@@ -1470,7 +1503,7 @@ router.post('/store-hours', jsonParser, [
             // Check if store hours already exist for this branch
             const checkExistence = await db.query("SELECT id FROM branch_hours WHERE branch_id = $1", [branch_id]);
             if (checkExistence.rowCount > 0) {
-                return res.status(409).json({ success: false, message: `Store hours already exist for branch with ID ${branch_id}. Please update instead.` });
+                return res.status(409).json({ success: false, message: `Store hours already exist for branch with ID ${branch_id}. Please update instead.`, data: [] });
             }
 
             // Iterate over days and add data to storeHoursData array
@@ -1494,11 +1527,11 @@ router.post('/store-hours', jsonParser, [
         }
 
         await db.query("COMMIT");
-        res.status(200).json({ success: true, message: "Store hours inserted successfully" });
+        res.status(200).json({ success: true, message: "Store hours inserted successfully", data: [] });
     } catch (error) {
         await db.query("ROLLBACK");
         console.error("Error inserting store hours:", error);
-        res.status(500).json({ success: false, message: "Internal server error occurred." });
+        res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] });
     }
 });
 
@@ -1518,9 +1551,9 @@ router.get('/store-hours', check("branch_id").isInt(), async (req, res) => {
             branch_hours.push(storeHours)
         }
 
-        res.json({ success: true, data: branch_hours.sort((a, b) => a.id - b.id) })
+        res.json({ success: true, data: branch_hours.sort((a, b) => a.id - b.id), message: "OK" })
     } catch (error) {
-        res.status(500).json({ success: false, message: "Internal server error occurred." });
+        res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] });
     }
 });
 
@@ -1564,7 +1597,7 @@ router.put('/update-store-hours/', jsonParser, [
         // Check if store hours exist for the branch
         const checkExistence = await db.query('SELECT id from branch_hours WHERE branch_id = $1', [branchId]);
         if (checkExistence.rowCount === 0) {
-            return res.status(404).json({ success: false, message: 'Store hours not found for this branch' });
+            return res.status(404).json({ success: false, message: 'Store hours not found for this branch', data: [] });
         }
 
         // Update store hours for the branch
@@ -1586,11 +1619,11 @@ router.put('/update-store-hours/', jsonParser, [
 
 
         await db.query('COMMIT');
-        res.status(200).json({ success: true, message: 'Store hours updated successfully' });
+        res.status(200).json({ success: true, message: 'Store hours updated successfully', data: [] });
     } catch (error) {
         await db.query('ROLLBACK');
         console.error(error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Internal server error', data: [] });
     }
 });
 
@@ -1635,7 +1668,8 @@ router.get('/holidays', jsonParser, check('branch_id').isInt().withMessage('Bran
 
             res.json({
                 success: true,
-                data: formatedData
+                data: formatedData,
+                message: "OK"
             });
         } catch (error) {
             console.log(error)
@@ -1663,7 +1697,7 @@ router.post('/holidays', jsonParser, [
         try {
             const checkExisting = await db.query("SELECT COUNT(*) AS overlap_count FROM holiday_hours WHERE branch_id = $1 AND status = 1 AND ((from_date, to_date) OVERLAPS ($2, $3));", [branch_id, from_date, to_date])
             if (checkExisting.rows[0].overlap_count > 0) {
-                res.status(409).json({ success: false, message: "We're unable to save the new holiday hours because they overlap with existing holiday hours. Please select a different time period or modify existing one." });
+                res.status(409).json({ success: false, message: "We're unable to save the new holiday hours because they overlap with existing holiday hours. Please select a different time period or modify existing one.", data: [] });
             } else {
                 // Insert holiday hours
                 const insertHoliday = await db.query('INSERT INTO holiday_hours (branch_id, from_date, to_date, status) VALUES ($1, $2, $3, $4) RETURNING id',
@@ -1673,7 +1707,7 @@ router.post('/holidays', jsonParser, [
             }
         } catch (error) {
             console.error(error);
-            res.status(500).json({ success: false, message: 'Internal server error' });
+            res.status(500).json({ success: false, message: 'Internal server error', data: [] });
         }
     });
 
@@ -1695,22 +1729,22 @@ router.put('/holidays', jsonParser, [
         // Check if the holiday hours exist
         const checkExistence = await db.query("SELECT id FROM holiday_hours WHERE id = $1 AND branch_id", [id, branch_id]);
         if (checkExistence.rowCount === 0) {
-            return res.status(404).json({ success: false, message: "Holiday hours not found" });
+            return res.status(404).json({ success: false, message: "Holiday hours not found", data: [] });
         }
 
         // Check for overlapping holiday hours
         const checkOverlap = await db.query("SELECT id FROM holiday_hours WHERE branch_id = $1 AND id != $2 AND (($3 BETWEEN from_date AND to_date) OR ($4 BETWEEN from_date AND to_date))", [branch_id, id, from_date, to_date]);
         if (checkOverlap.rowCount > 0) {
-            return res.status(400).json({ success: false, message: "The provided holiday hours overlap with other existing holiday hours" });
+            return res.status(400).json({ success: false, message: "The provided holiday hours overlap with other existing holiday hours", data: [] });
         }
 
         // Update the holiday hours
         await db.query("UPDATE holiday_hours SET from_date = $2, to_date = $3, status = $4 WHERE id = $5", [from_date, to_date, status, id]);
 
-        res.status(200).json({ success: true, message: "Holiday hours updated successfully" });
+        res.status(200).json({ success: true, message: "Holiday hours updated successfully", data: [] });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
 
@@ -1730,18 +1764,18 @@ router.delete('/holidays',
                 // Check if the holiday hours exist
                 const existingHolidayHours = await db.query('SELECT id FROM holiday_hours WHERE id = $1', [id]);
                 if (existingHolidayHours.rowCount === 0) {
-                    return res.status(404).json({ success: false, message: 'Holiday hours not found' });
+                    return res.status(404).json({ success: false, message: 'Holiday hours not found', data: [] });
                 }
 
                 // Delete the holiday hours
                 await db.query('DELETE FROM holiday_hours WHERE id = $1', [id]);
 
-                res.status(200).json({ success: true, message: 'Holiday hours deleted successfully' });
+                res.status(200).json({ success: true, message: 'Holiday hours deleted successfully', data: [] });
 
             }
             catch (error) {
                 console.error('Error deleting holiday hours:', error);
-                res.status(500).json({ success: false, message: 'Internal server error' });
+                res.status(500).json({ success: false, message: 'Internal server error', data: [] });
             }
         }
     });
@@ -1800,11 +1834,11 @@ router.post("/services",
             }
 
             await db.query("COMMIT");
-            res.status(200).json({ success: true, data: [{ service_id: service_id }] })
+            res.status(200).json({ success: true, data: [{ service_id: service_id }], data: [] })
         }
         catch (err) {
             await db.query("ROLLBACK")
-            res.json(err);
+            res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
         }
     }
 );
@@ -1839,13 +1873,13 @@ router.put("/services",
             await db.query("BEGIN");
 
             if (Object.keys(jsonData).length === 0) {
-                return res.status(400).json({ success: false, message: "No data provided for updating service." });
+                return res.status(400).json({ success: false, message: "No data provided for updating service.", data: [] });
             }
 
             // Check if the provided service_id exists
             const checkServiceExists = await db.query("SELECT id FROM services WHERE id = $1", [serviceId]);
             if (checkServiceExists.rows.length === 0) {
-                return res.status(404).json({ success: false, message: "Service not found." });
+                return res.status(404).json({ success: false, message: "Service not found.", data: [] });
             }
 
             // Update service details
@@ -1892,7 +1926,7 @@ router.put("/services",
                             await db.query("UPDATE additional_information SET title = $1, description = $2, updated_at = now() WHERE id = $3", [element.title, element.description, element.id]);
                         }
                         else {
-                            return res.json({ success: false, message: `Additional Information with ID ${element.id} not found.` });
+                            return res.json({ success: false, message: `Additional Information with ID ${element.id} not found.`, data: [] });
                         }
                     } else {
                         // If additional information ID is not provided, insert new information
@@ -1902,11 +1936,11 @@ router.put("/services",
             }
 
             await db.query("COMMIT");
-            return res.status(200).json({ success: true, message: "Service updated successfully." });
+            return res.status(200).json({ success: true, message: "Service updated successfully.", data: [] });
         } catch (error) {
             await db.query("ROLLBACK");
             console.error("Error updating service:", error);
-            return res.status(500).json({ success: false, message: "Error updating service." });
+            return res.status(500).json({ success: false, message: "Error updating service.", data: [] });
         }
     }
 );
@@ -1928,7 +1962,7 @@ router.delete("/services",
             await db.query("BEGIN");
 
             if (serviceIds.length === 0) {
-                return res.status(400).json({ success: false, message: "No service IDs provided for deletion." });
+                return res.status(400).json({ success: false, message: "No service IDs provided for deletion.", data: [] });
             }
 
             // Check if the provided service IDs exist
@@ -1939,7 +1973,7 @@ router.delete("/services",
             const nonExistingServiceIds = serviceIds.filter(id => !existingServiceIds.includes(id));
 
             if (nonExistingServiceIds.length > 0) {
-                return res.status(404).json({ success: false, message: `Services with IDs ${nonExistingServiceIds.join(', ')} not found.` });
+                return res.status(404).json({ success: false, message: `Services with IDs ${nonExistingServiceIds.join(', ')} not found.`, data: [] });
             }
 
             // Update the status of services to 0 (inactive)
@@ -1952,11 +1986,11 @@ router.delete("/services",
 
 
             await db.query("COMMIT");
-            return res.status(200).json({ success: true, message: "Services deleted successfully." });
+            return res.status(200).json({ success: true, message: "Services deleted successfully.", data: [] });
         } catch (error) {
             await db.query("ROLLBACK");
             console.error("Error deactivating services:", error);
-            return res.status(500).json({ success: false, message: "Error deleting services." });
+            return res.status(500).json({ success: false, message: "Error deleting services.", data: [] });
         }
     }
 );
@@ -1971,13 +2005,13 @@ router.delete("/serviceoption/:option_id", check("option_id").isInt().customSani
         const id = req.params.option_id;
         const deleteOption = await db.query("UPDATE services_options SET status = $1 WHERE id = $2 AND status = $3;", [enums.is_active.no, id, enums.is_active.yes])
         if (deleteOption.rowCount > 0) {
-            return res.json({ success: true, messaage: "Service option deleted succesfully..." });
+            return res.json({ success: true, message: "Service option deleted succesfully...", data: [] });
         } else {
-            return res.json({ success: false, messaage: "Service option not found..." });
+            return res.json({ success: false, message: "Service option not found...", data: [] });
         }
 
     } catch (error) {
-        res.status(500).json("Internal server error occurred.")
+        res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] })
     }
 
 });
@@ -1989,10 +2023,10 @@ router.get("/getServiceCreationDetails", authMiddleware, async (req, res) => {
         const department = getDepartments.rows;
         const getCategories = await db.query("SELECT id,name FROM categories");
         const categories = getCategories.rows;
-        res.status(200).json({ department: department, categories: categories });
+        res.status(200).json({ data: { department: department, categories: categories }, message: "OK" });
     }
     catch (error) {
-        res.status(500).json(error);
+        res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 })
 

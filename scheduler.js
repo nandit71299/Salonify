@@ -25,6 +25,6 @@ async function updateExpiredAppointmentsStatus() {
 }
 
 // Call the function periodically or as needed
-setInterval(updateExpiredAppointmentsStatus, 900000); // Runs every 15 minutes (900000 milliseconds)
+setInterval(updateExpiredAppointmentsStatus, 90000); // Runs every 15 minutes (900000 milliseconds)
 
 export { updateExpiredAppointmentsStatus };
