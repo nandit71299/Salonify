@@ -53,4 +53,4 @@ const coupon_type = {
     platform_coupon: 1,
     branch_coupon: 2
 }
-export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type, payment_status };
+export { EmployeeType, UserType, is_active, appointmentType, salon_type, wishlist_type, payment_status, coupon_type };

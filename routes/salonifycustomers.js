@@ -1008,7 +1008,10 @@ router.get("/branchoffers", check("branch_id").isInt(), authMiddleware, async (r
 router.post("/bookappointment",
     check("user_id").isNumeric(),
     check("branch_id").isNumeric(),
-    check("appointment_date").isDate(), check("start_time").custom(value => {
+    check("services").isArray(),
+    check("services.*").isNumeric(),
+    check("appointment_date").isDate(),
+    check("start_time").custom(value => {
         return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? true : (() => {
             throw new Error('Value must be in the time format HH:MM');
         })();
@@ -1034,20 +1037,45 @@ router.post("/bookappointment",
             const services = req.body.services;
             const platform_coupon_id = req.body.platform_coupon_id || 0;
 
+            // Check if services belong to the same branch? and services do exists?
+            for (const service of services) {
+                const service_id = service;
+                const query = await db.query("SELECT services_options.*,services.branch_id FROM services_options LEFT JOIN services ON services_options.service_id = services.id WHERE services_options.id = $1 AND services_options.status = $2 AND services.branch_id = $3;", [service_id, enums.is_active.yes, branch_id]);
+                if (query.rowCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: `Appologies. Seems like the branch is no longer accepting appointments for one of your service. Feel free to explore other services from this branch or other near by branches.`,
+                        data: []
+                    })
+                }
+            }
+
+
             let taxAmount = 0;
             let discountAmount = 0;
             let advance_percentage = 30;
 
             // Handle platform coupon discount
             if (!isNaN(platform_coupon_id) && parseInt(platform_coupon_id) !== 0) {
-                const couponAmount = await db.query("SELECT discount_amount,advance_percentage FROM platform_coupon WHERE id = $1", [platform_coupon_id]);
-                if (couponAmount.rowCount > 0) {
-                    discountAmount = couponAmount.rows[0].discount_amount;
-                    advance_percentage = couponAmount.rows[0].advance_percentage;
+                // check if the branch has actually particiapted in the offer or not
+                const checkBranchCoupon = await db.query("SELECT * FROM platform_coupon_branch WHERE branch_id = $1 AND platform_coupon_id = $2;", [branch_id, platform_coupon_id]);
+                if (checkBranchCoupon.rowCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Opps!! Looks like the coupon is not valid or is expired...",
+                        data: [],
+                    })
+                }
+
+                // check coupon exists or not. if yes assign respective values. if not return error
+                const checkCoupon = await db.query("SELECT discount_amount,advance_percentage FROM platform_coupon WHERE id = $1", [platform_coupon_id]);
+                if (checkCoupon.rowCount > 0) {
+                    discountAmount = checkCoupon.rows[0].discount_amount;
+                    advance_percentage = checkCoupon.rows[0].advance_percentage;
                 } else {
                     return res.status(400).json({
                         success: false,
-                        message: "Error applying discount coupon...",
+                        message: "Opps!! Looks like the coupon is not valid or is expired.",
                         data: [],
                     });
                 }
@@ -1056,8 +1084,10 @@ router.post("/bookappointment",
             // Determine the weekday name of the appointment date
             const formattedAppointmentDate = moment(appointment_date, 'YYYY/MM/DD').format('YYYY-MM-DD');
             const appointmentWeekday = moment(formattedAppointmentDate).format('dddd').toLowerCase();
-            // Query branch hours for the appointment weekday
-            const branchHoursQuery = await db.query("SELECT start_time, end_time, status FROM branch_hours WHERE branch_id = $1 AND day = $2", [branch_id, appointmentWeekday]);
+
+            // Query branch hours for the appointment weekday , and 
+            // Check if the salon is closed on the selected appointment day
+            const branchHoursQuery = await db.query("SELECT start_time, end_time, status FROM branch_hours WHERE branch_id = $1 AND day = $2 AND status = $3", [branch_id, appointmentWeekday, enums.is_active.yes]);
             if (branchHoursQuery.rowCount === 0) {
                 return res.status(409).json({
                     success: false,
@@ -1070,16 +1100,7 @@ router.post("/bookappointment",
             const appointmentDateTime = new Date(`${appointment_date} ${start_time}`);
             const checkHolidayQuery = await db.query("SELECT id FROM holiday_hours WHERE branch_id = $1 AND $2 BETWEEN from_date AND to_date AND status = 1", [branch_id, appointmentDateTime]);
             if (checkHolidayQuery.rowCount > 0) {
-                return res.status(409).json({ success: false, message: "The salon is closed for holiday on the selected appointment date." });
-            }
-            // Check if the salon is closed on the selected appointment day
-            const branchStatus = branchHoursQuery.rows[0].status;
-            if (branchStatus === 0) {
-                return res.status(409).json({
-                    success: false,
-                    message: "Salon is closed on the selected appointment day.",
-                    data: []
-                });
+                return res.status(409).json({ success: false, message: "The salon is closed for holiday on the selected appointment date/time." });
             }
 
             // Extract start and end times from the query result
@@ -1107,7 +1128,14 @@ router.post("/bookappointment",
 
             // Loop through each service and add its duration to the end time
             for (const serviceId of services) {
-                const serviceOptionQuery = await db.query("SELECT duration FROM services_options WHERE id = $1", [serviceId]);
+                const serviceOptionQuery = await db.query("SELECT duration FROM services_options WHERE id = $1 AND status = $2", [serviceId, enums.is_active.yes]);
+                if (serviceOptionQuery.rowCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Apologies, it seems this service is currently unavailable. Please feel free to explore other services at this branch or similar ones at nearby branches. Thank you for your understanding!",
+                        data: []
+                    })
+                }
                 const serviceDuration = serviceOptionQuery.rows[0].duration;
 
                 // Add service duration to the end time
@@ -1119,7 +1147,14 @@ router.post("/bookappointment",
 
 
             // Check available seats
-            const checkSeatsQuery = await db.query("SELECT seats FROM branches WHERE id = $1", [branch_id]);
+            const checkSeatsQuery = await db.query("SELECT seats FROM branches WHERE id = $1 AND status = $2", [branch_id, enums.is_active.yes]);
+            if (checkSeatsQuery.rowCount === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Appologies, it seems the branch is not accepting the appointments right now.",
+                    data: []
+                })
+            }
             const totalSeats = checkSeatsQuery.rows[0].seats;
 
             let availableSeat = 0;
@@ -1169,6 +1204,9 @@ router.post("/bookappointment",
 
             const finalNetAmount = finalSubtotal - finalTotalDiscount + finalTotalTax;
             const updateAppointment = await db.query("UPDATE appointment SET subtotal = $1,total_discount=$2,total_tax=$3,net_amount=$4 WHERE id = $5 RETURNING *", [finalSubtotal, finalTotalDiscount, finalTotalTax, finalNetAmount, appointmentId]);
+            if (finalTotalDiscount > 0) {
+                const insertAppointmentDiscount = await db.query("INSERT INTO appointment_discount (appointment_id,coupon_type,coupon_id,amount) VALUES ($1,$2,$3,$4);", [updateAppointment.rows[0].id, platform_coupon_id ? enums.coupon_type.platform_coupon : 2, platform_coupon_id, finalTotalDiscount])
+            }
 
             let advance_amount = (finalNetAmount * advance_percentage) / 100;
 
@@ -1191,7 +1229,7 @@ router.post("/bookappointment",
                 data: []
             });
         }
-    });
+    })
 
 // FIXME Maybe in this route we need to get the current total_price_paid from the tables and add it to the new payment amount... , also deicde when to add payment details in payment table whether in this route or payment route
 router.put("/confirm-appointment",
@@ -1230,13 +1268,12 @@ router.put("/confirm-appointment",
                 return res.status(404).json({ success: false, message: "Appointment not found.", data: [] });
             }
 
-            const existingPaidAmount = getAppointment.rows[0].total_amount_paid;
-
+            const existingPaidAmount = parseFloat(getAppointment.rows[0].total_amount_paid);
             // Calculate the new total_amount_paid
-            const newTotalPaidAmount = existingPaidAmount + paid_amount;
+            const newTotalPaidAmount = (parseFloat(existingPaidAmount) + parseFloat(paid_amount)).toFixed(2);
 
             // Update total_amount_paid in the appointment table
-            const updateAppointment = await db.query("UPDATE appointment SET total_amount_paid = $1 WHERE id = $2 RETURNING id", [newTotalPaidAmount, appointment_id]);
+            const updateAppointment = await db.query("UPDATE appointment SET total_amount_paid = $1, status = $2 WHERE id = $3 RETURNING id", [newTotalPaidAmount, enums.appointmentType.Confirmed, appointment_id]);
 
             if (updateAppointment.rowCount === 0) {
                 await db.query('ROLLBACK');
@@ -1256,7 +1293,8 @@ router.put("/confirm-appointment",
 
                 // Calculate the new total_price_paid for each service item
                 for (const item of serviceItems) {
-                    const newTotalPricePaid = item.service_price * (paid_amount / existingPaidAmount);
+                    const newTotalPricePaid = parseFloat(item.service_price) * parseFloat(paid_amount) + parseFloat(existingPaidAmount)
+                    // const newTotalPricePaid = parseFloat(item.service_price) * ((parseFloat(paid_amount) / parseFloat(existingPaidAmount)));
                     // Update total_price_paid for each service item
                     await db.query("UPDATE appointment_items SET total_price_paid = $1 WHERE id = $2", [newTotalPricePaid, item.id]);
                 }
@@ -1266,7 +1304,7 @@ router.put("/confirm-appointment",
             // Commit the transaction
             await db.query("COMMIT");
 
-            return res.status(200).json({ success: true, message: "Appointment confirmed and total amount paid updated.", data: [] });
+            return res.status(200).json({ success: true, message: "Appointment confirmed.", data: [] });
         } catch (error) {
             // Rollback the transaction in case of an error
             await db.query('ROLLBACK');
@@ -1395,7 +1433,7 @@ router.put("/servicewishlist", check('user_id').isInt(), check('type_id').isInt(
             // If the row does not exist, insert a new row with status 1
             statusToUpdate = 1;
             await db.query(
-                `INSERT INTO wishlist (user_id, wishlist_type, type_id, status) VALUES ($1, $2, $3, $4)`,
+                `INSERT INTO wishlist(user_id, wishlist_type, type_id, status) VALUES($1, $2, $3, $4)`,
                 [user_id, enums.wishlist_type.branch, type_id, statusToUpdate]
             );
         }
@@ -1445,7 +1483,7 @@ router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), 
             // If the row does not exist, insert a new row with status 1
             statusToUpdate = 1;
             await db.query(
-                `INSERT INTO wishlist (user_id, wishlist_type, type_id, status) VALUES ($1, $2, $3, $4)`,
+                `INSERT INTO wishlist(user_id, wishlist_type, type_id, status) VALUES($1, $2, $3, $4)`,
                 [user_id, enums.wishlist_type.branch, type_id, statusToUpdate]
             );
         }
@@ -1460,20 +1498,20 @@ router.put("/branchwishlist", check('user_id').isInt, check('type_id').isInt(), 
 // router.get("/initiateadvancepayment",)
 // router.get("/initiatepostservicepayment",)
 
-router.get("/appointmentdetails", check("appointment_id").isInt(), authMiddleware, async (req, res) => {
+router.get("/appointmentdetails", check("appointment_id").isInt(), check("branch_id").isInt(), authMiddleware, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
         const appointmentId = req.query.appointment_id;
-
+        const branch_id = req.query.branch_id;
         // Fetch appointment details
-        const appointmentDetails = await db.query("SELECT * FROM appointment WHERE id = $1", [appointmentId]);
+        const appointmentDetails = await db.query("SELECT * FROM appointment WHERE id = $1 AND branch_id = $2", [appointmentId, branch_id]);
         const appointment = appointmentDetails.rows[0];
 
         if (appointmentDetails.rowCount === 0) {
-            return res.status(404).json({ success: false, message: "Appoitment not found", data: [] })
+            return res.status(404).json({ success: false, message: "Appointment not found", data: [] })
         }
 
         // Fetch Branch Details

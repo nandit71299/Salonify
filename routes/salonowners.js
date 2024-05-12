@@ -36,19 +36,21 @@ let transporter =
 router.get("/testsalonownerroute", async (req, res) => {
 });
 
+//TODO we have to have a functionality where different branches can signup with their own registered email and password
+//TODO we have to add latitude / logitude with the queries
 router.post("/registersalon",
-    check("email").trim().isEmail(),
+    check("email").trim().isEmail().not().isEmpty(),
     check("password").trim().isLength({ min: 6 }),
-    check("personalName").trim().isString(),
-    check("personalPhone").trim().isMobilePhone(),
-    check("image").isBase64(),
-    check("salon_name").trim().isString(),
-    check("contact_number").trim().isNumeric(),
-    check("salonDescription").trim().isString(),
-    check("location").trim().isAlphanumeric(),
-    check("address").trim().isString(),
-    check("type").trim().isNumeric(),
-    check("seats").trim().isNumeric(),
+    check("personalName").trim().isString().not().isEmpty(),
+    check("personalPhone").trim().isMobilePhone().not().isEmpty(),
+    check("image").isBase64().not().isEmpty(),
+    check("salon_name").trim().isString().not().isEmpty().not().isEmpty(),
+    check("contact_number").trim().isNumeric().not().isEmpty(),
+    check("salonDescription").trim().isString().not().isEmpty(),
+    check("location").trim().isString().not().isEmpty(),
+    check("address").trim().isString().not().isEmpty(),
+    check("type").trim().isNumeric().not().isEmpty(),
+    check("seats").trim().isNumeric().not().isEmpty(),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -138,7 +140,7 @@ router.post("/login", check("email").isEmail(), check("password").not().isEmpty(
                 return res.status(401).json({ success: false, message: "Invalid email or password.", data: [] });
             }
             const token = jwt.sign({ user }, SecretKey, { expiresIn: '1h' });
-            return res.json({ success: true, token, id: user.id, branch_id: getBranchDetails.rows[0].id });
+            return res.json({ success: true, token, user_id: user.id, branch_id: getBranchDetails.rows[0].id });
         });
     } catch (error) {
         console.error("Error in login:", error);
@@ -229,9 +231,10 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
         }
 
         const user_id = req.query.user_id;
+        const branch_id = req.query.branch_id;
 
         // Get User Information
-        const getUserInfo = await db.query("SELECT * FROM users WHERE id = $1 AND status = $2", [user_id, enums.is_active.yes]);
+        const getUserInfo = await db.query("SELECT name FROM users WHERE id = $1 AND status = $2 AND user_type = $3", [user_id, enums.is_active.yes, enums.UserType.salon_admin]);
         if (getUserInfo.rowCount === 0) {
             return res.status(404).json({
                 success: false,
@@ -241,9 +244,16 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
         }
         const userInfo = getUserInfo.rows[0];
         const { name: user_name } = userInfo;
-
         // Get Salon Information
-        const getSalonInfo = await db.query("SELECT * FROM saloon WHERE user_id = $1 AND status = $2", [user_id, enums.is_active.yes]);
+        const getSalonInfo = await db.query(`select saloon.id,saloon.user_id , saloon.saloon_name from saloon left join branches on saloon.id = branches.saloon_id 
+        WHERE saloon.user_id = $1 AND branches.id = $2 AND branches.status = $3`, [user_id, branch_id, enums.is_active.yes]);
+        if (getSalonInfo.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Saloon/Branch not found",
+                data: []
+            })
+        }
         const salonInfo = getSalonInfo.rows[0];
         const { id: saloon_id, saloon_name: salon_name } = salonInfo;
 
@@ -252,7 +262,7 @@ router.get("/dashboard", check('user_id').isInt(), authMiddleware, async (req, r
         const branches = getBranches.rows;
 
         // Check if there are any offers available to participate
-        const checkOffers = await db.query('SELECT COUNT(id) FROM platform_coupon WHERE id NOT IN (SELECT DISTINCT platform_coupon_id FROM platform_coupon_branch) AND status = $1', [enums.is_active.yes]);
+        const checkOffers = await db.query('select count(*) from platform_coupon WHERE id NOT IN (select platform_coupon_id from platform_coupon_branch WHERE branch_id = $1) AND status = $2', [branch_id, enums.is_active.yes]);
         const offersCount = parseInt(checkOffers.rows[0].count);
         const offerbannertoshow = offersCount > 0;
 
@@ -726,7 +736,7 @@ router.get("/services", check("branch_id").isInt(), authMiddleware, async (req, 
 
         const getAllServices = await db.query("SELECT id,name,branch_id,category_id,description,department FROM services WHERE branch_id = $1 AND status = $2", [branch_id, enums.is_active.yes]);
         if (getAllServices.rowCount === 0) {
-            res.json({ success: true, message: "No Services Found.", data: [] })
+            return res.json({ success: true, message: "No Services Found.", data: [] })
         }
         for (const iterator of getAllServices.rows) {
             const { id, name, branch_id, category_id, description } = iterator;
@@ -898,7 +908,7 @@ router.get("/appointments", check("branch_id").isInt(), authMiddleware, async (r
     }
 });
 
-router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, res) => {
+router.get("/appointmentdetails", check("appointment_id").isInt(), check("branch_id").isInt(), async (req, res) => {
     // Validate request parameters
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -908,9 +918,9 @@ router.get("/appointmentdetails", check("appointment_id").isInt(), async (req, r
     try {
         // Extract appointment_id from request query
         const appointment_id = req.query.appointment_id;
-
+        const branch_id = req.query.branch_id;
         // Get appointment details from the database
-        const getAppointmentDetails = await db.query("SELECT * FROM appointment WHERE id = $1;", [appointment_id]);
+        const getAppointmentDetails = await db.query("SELECT * FROM appointment WHERE id = $1 AND branch_id = $2;", [appointment_id, branch_id]);
         if (getAppointmentDetails.rows.length === 0) {
             // If appointment not found, return 404 response
             return res.status(404).json({
@@ -1270,9 +1280,6 @@ router.get("/platform-offer-insights", check("branch_id").isInt(), check("platfo
         res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
     }
 });
-
-
-
 
 // router.post("/exit-from-platform-offer");
 
@@ -1727,7 +1734,7 @@ router.put('/holidays', jsonParser, [
         const { branch_id, from_date, to_date, status } = req.body;
 
         // Check if the holiday hours exist
-        const checkExistence = await db.query("SELECT id FROM holiday_hours WHERE id = $1 AND branch_id", [id, branch_id]);
+        const checkExistence = await db.query("SELECT id FROM holiday_hours WHERE id = $1 AND branch_id=$2", [id, branch_id]);
         if (checkExistence.rowCount === 0) {
             return res.status(404).json({ success: false, message: "Holiday hours not found", data: [] });
         }
@@ -1750,6 +1757,7 @@ router.put('/holidays', jsonParser, [
 
 router.delete('/holidays',
     check('id').isInt(),
+    check('branch_id').isInt(),
     authMiddleware
     , async (req, res) => {
 
@@ -1758,11 +1766,11 @@ router.delete('/holidays',
             return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
         } else {
 
-            const { id } = req.body;
+            const { id, branch_id } = req.query;
 
             try {
                 // Check if the holiday hours exist
-                const existingHolidayHours = await db.query('SELECT id FROM holiday_hours WHERE id = $1', [id]);
+                const existingHolidayHours = await db.query('SELECT id FROM holiday_hours WHERE id = $1 AND branch_id = $2', [id, branch_id]);
                 if (existingHolidayHours.rowCount === 0) {
                     return res.status(404).json({ success: false, message: 'Holiday hours not found', data: [] });
                 }
@@ -1995,15 +2003,31 @@ router.delete("/services",
     }
 );
 
-router.delete("/serviceoption/:option_id", check("option_id").isInt().customSanitizer(value => parseInt(value)), authMiddleware, async (req, res) => {
+router.delete("/serviceoption", check("option_id").isInt().customSanitizer(value => parseInt(value)), check("branch_id").isInt(), authMiddleware, async (req, res) => {
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
     }
     try {
-        const id = req.params.option_id;
-        const deleteOption = await db.query("UPDATE services_options SET status = $1 WHERE id = $2 AND status = $3;", [enums.is_active.no, id, enums.is_active.yes])
+        const option_id = req.query.option_id;
+        const branch_id = req.query.branch_id;
+
+        //check service option if it belongs to the supplied branch_id
+
+        const checkServiceOptionExists = await db.query(`SELECT services_options.*,services.branch_id FROM services_options LEFT JOIN services ON services_options.service_id = services.id 
+        WHERE services_options.id = $1 AND services_options.status = $2 AND services.branch_id = $3
+        `, [option_id, enums.is_active.yes, branch_id]);
+
+        if (checkServiceOptionExists.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Service Option Not Found",
+                data: []
+            })
+        }
+
+        const deleteOption = await db.query("UPDATE services_options SET status = $1 WHERE id = $2 AND status = $3;", [enums.is_active.no, option_id, enums.is_active.yes])
         if (deleteOption.rowCount > 0) {
             return res.json({ success: true, message: "Service option deleted succesfully...", data: [] });
         } else {
@@ -2011,6 +2035,7 @@ router.delete("/serviceoption/:option_id", check("option_id").isInt().customSani
         }
 
     } catch (error) {
+        console.log(error)
         res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] })
     }
 
