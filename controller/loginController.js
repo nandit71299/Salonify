@@ -9,9 +9,9 @@ const logger = require('../config/logger');
 module.exports = {
     async login(req, res) {
         try {
-            const { username, password } = req.body;
+            const { email, password } = req.body;
 
-            const user = await User.findOne({ where: { email: username } });
+            const user = await User.findOne({ where: { email: email } });
 
             if (!user) {
                 return res.status(404).json({ error: 'Invalid Credentials.' });
@@ -70,10 +70,12 @@ module.exports = {
                 const filePath = path.join(__dirname, '..', 'public', 'salon_images', imageFile.originalname);
                 await fs.promises.writeFile(filePath, imageFile.buffer);
 
-                const user = await User.create({ name: personalName, phone_number: phoneNumber, email: email, password: hashedPassword, dob: new Date().toLocaleDateString(),
-                    user_type: 1, status: 1,  designation: 'test', hired_date: new Date().toLocaleDateString() }, { transaction, returning: true });
+                const user = await User.create({
+                    name: personalName, phone_number: phoneNumber, email: email, password: hashedPassword, dob: new Date().toLocaleDateString(),
+                    user_type: 1, status: 1, designation: 'test', hired_date: new Date().toLocaleDateString()
+                }, { transaction, returning: true });
                 const saloon = await Saloon.create({ name: salon_name, description: salonDescription, status: 1 }, { transaction, returning: true });
-                await Branch.create({ saloon_id: saloon.id, user_id: user.id, name: personalName, city: city, address, type, contact: contact_number, latitude, longitude, seats, isParent:true }, { transaction });
+                await Branch.create({ saloon_id: saloon.id, user_id: user.id, name: personalName, city: city, address, type, contact: contact_number, latitude, longitude, seats, isParent: true }, { transaction });
 
                 response.status(201).json({ success: true, message: "Registration successful.", data: [] });
             } catch (error) {

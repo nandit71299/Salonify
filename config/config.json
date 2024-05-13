@@ -1,10 +1,10 @@
 {
   "development": {
-    "username": "",
-    "password": "",
-    "database": "",
+    "username": "postgres",
+    "password": "root",
+    "database": "database_nandit_developement",
     "host": "127.0.0.1",
-    "dialect": "mysql"
+    "dialect": "postgres"
   },
   "test": {
     "username": "root",
