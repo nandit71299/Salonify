@@ -3,12 +3,15 @@ const logger = require('../config/logger');
 const jwt = require('jsonwebtoken');
 const { createTransport } = require('../config/mailer');
 const moment = require('moment')
+const bcrypt = require('bcrypt');
+
 
 module.exports = {
     async store(request, response) {
         const {
             phone_number,
             email,
+            password,
         } = request.body;
 
         const emailAndPhoneNumberExistence = await User.findOne({ where: { email: email, phone_number: phone_number } });
@@ -23,8 +26,8 @@ module.exports = {
                 const currentTime = new Date();
                 currentTime.setMinutes(currentTime.getMinutes() + 10);
                 const otpValidity = currentTime.toISOString().slice(0, 19).replace('T', ' ');
-
-                const user = await User.create({ ...request.body, otp: otp, otp_validity: otpValidity }, { transaction });
+                const encryptedPassword = await bcrypt.hash(password, parseInt(process.env.saltRounds));
+                const user = await User.create({ phone_number: phone_number, email: email, password: encryptedPassword, otp: otp, otp_validity: otpValidity }, { transaction });
                 const mailOptions = {
                     from: process.env.FROM_EMAIL_USER,
                     to: user.email,

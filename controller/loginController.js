@@ -12,7 +12,6 @@ module.exports = {
             const { email, password } = req.body;
 
             const user = await User.findOne({ where: { email: email } });
-
             if (!user) {
                 return res.status(404).json({ error: 'Invalid Credentials.' });
             }
@@ -22,7 +21,7 @@ module.exports = {
                 return res.status(401).json({ error: 'Invalid credentials.' });
             }
 
-            const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expireIn: '1h' });
+            const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
             res.status(200).json({ message: 'Login successfully', user, token });
         } catch (error) {

@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const upload = multer();
 
+const authMiddleware = require("../config/authMiddleware.js")
 const saloonRegistrationData = require('../validation/saloonRegistration');
 const customerLogin = require('../validation/customerlogin.js');
 const LoginController = require('../controller/loginController');
