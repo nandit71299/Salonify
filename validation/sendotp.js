@@ -1,8 +1,9 @@
 const { validationResult, check } = require('express-validator');
 const logger = require('../config/logger');
 
-exports.validateBranchRegistration = [
-    check("placeholder").trim().not().isEmpty(),
+
+exports.validateSendOtp = [
+    check("email").trim().isEmail(),
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

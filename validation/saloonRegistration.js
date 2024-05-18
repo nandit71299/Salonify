@@ -9,12 +9,12 @@ exports.validateSalonRegistration = [
     check("type").trim().isNumeric(),
     check("image").isBase64(),
     check("address").trim().isString(),
-    check("image").custom((value, { req }) => {
-        if (!req.file) {
-            throw new Error('Image is required');
-        }
-        return true;
-    }),
+    // check("image").custom((value, { req }) => {
+    //     if (!req.file) {
+    //         throw new Error('Image is required');
+    //     }
+    //     return true;
+    // }),
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
