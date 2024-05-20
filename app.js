@@ -1,13 +1,15 @@
+'use strict';
+
 require('dotenv').config();
 
 const express = require('express');
 const app = express();
-const routes = require('./routes/apis');
+const adminRoutes = require('./routes/AdminRoute');
 
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/api', routes);
+app.use('/api', adminRoutes);
 
 app.listen(3000, () => {});

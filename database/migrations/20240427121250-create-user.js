@@ -1,9 +1,13 @@
 'use strict';
-/** @type {import('sequelize-cli').Migration} */
-module.exports = {
-    async up(queryInterface, Sequelize) {
-        const { DataTypes } = Sequelize;
 
+const { DataTypes } = require('sequelize');
+
+class CreateUsersTable {
+    /**
+     * Runs the migration to create the Users table.
+     * @param {import('sequelize').QueryInterface} queryInterface
+     */
+    async up(queryInterface) {
         await queryInterface.createTable('Users', {
             id: {
                 allowNull: false,
@@ -57,6 +61,11 @@ module.exports = {
                 type: DataTypes.DATE,
                 allowNull: true,
             },
+            is_verified: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
             createdAt: {
                 allowNull: false,
                 type: DataTypes.DATE
@@ -66,5 +75,15 @@ module.exports = {
                 type: DataTypes.DATE
             }
         });
-    },
-};
+    }
+
+    /**
+     * Reverts the migration by dropping the Users table.
+     * @param {import('sequelize').QueryInterface} queryInterface
+     */
+    async down(queryInterface) {
+        await queryInterface.dropTable('Users');
+    }
+}
+
+module.exports = new CreateUsersTable();
