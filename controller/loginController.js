@@ -82,7 +82,7 @@ module.exports = {
                 }, { transaction, returning: true });
                 const saloon = await Saloon.create({ name: salon_name, description: salonDescription, status: 1 }, { transaction, returning: true });
 
-                const branch = await Branch.create({ saloon_id: saloon.id, user_id: user.id, name: personalName, city: city, address: address, type: type, contact: contact_number, latitude: latitude, longitude: longitude, seats: seats, isParent: true, image: filePath }, { transaction, returning: true });
+                const branch = await Branch.create({ saloon_id: saloon.id, user_id: user.id, name: personalName, city: city, address: address, type: type, contact: contact_number, latitude: latitude, longitude: longitude, seats: seats, status: 1, isParent: true, image: filePath }, { transaction, returning: true });
                 response.status(201).json({ success: true, message: "Registration successful.", data: [] });
             } catch (error) {
                 logger.error("Error occurred during registration:", error);

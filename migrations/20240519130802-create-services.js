@@ -2,42 +2,30 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('Branches', {
+    await queryInterface.createTable('Services', {
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      saloon_id: {
-        type: Sequelize.INTEGER
-      },
       name: {
         type: Sequelize.STRING
       },
-      city: {
-        type: Sequelize.STRING
-      },
-      address: {
-        type: Sequelize.STRING
-      },
-      type: {
+      category_id: {
         type: Sequelize.INTEGER
       },
-      contact: {
-        type: Sequelize.STRING
-      },
-      image: {
-        type: Sequelize.STRING
-      },
-      latitude: {
-        type: Sequelize.DECIMAL
-      },
-      longitude: {
-        type: Sequelize.DECIMAL
-      },
-      seats: {
+      branch_id: {
         type: Sequelize.INTEGER
+      },
+      department_id: {
+        type: Sequelize.INTEGER
+      },
+      additional_information_id: {
+        type: Sequelize.INTEGER
+      },
+      description: {
+        type: Sequelize.STRING
       },
       status: {
         type: Sequelize.INTEGER
@@ -53,6 +41,6 @@ module.exports = {
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('Branches');
+    await queryInterface.dropTable('Services');
   }
 };

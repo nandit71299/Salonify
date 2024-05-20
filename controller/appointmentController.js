@@ -1,17 +1,33 @@
-const { User, Saloon, Branch, BranchHour, sequelize } = require('../models');
+const { User, Saloon, Branch, BranchHour, HolidayHour, ServiceOptions, sequelize } = require('../models');
+const moment = require('moment')
+const { Op, fn, col, where } = require('sequelize');
+
 
 module.exports = {
     async branchvacancy(req, res) {
         try {
             const branch_id = req.body.branch_id;
-            const formatedAppointmentDate = moment(req.body.appointment_date, 'YYYY/MM/DD').format("YYYY-MM-DD");
+            const formatedAppointmentDate = moment(req.body.appointment_date, 'YYYY-MM-DD').format("YYYY-MM-DD");
             const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
 
-            const getBranchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName } });
-            return console.log(getBranchHours);
+            const checkBranchExistence = await Branch.findOne({
+                where: {
+                    id: branch_id,
+                    status: 1,
+                }
+            });
+
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: [],
+                })
+            }
+            const getBranchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: 1 } });
 
             // const getBranchHours = await db.query("SELECT start_time, end_time FROM branch_hours WHERE branch_id = $1 AND day =$2 ", [branch_id, weekdayName]);
-            if (getBranchHours.rows.length === 0) {
+            if (!getBranchHours) {
                 return res.status(409).json({
                     success: false,
                     message: "Branch is closed on the selected day.",
@@ -19,14 +35,21 @@ module.exports = {
                 });
             }
 
-            let branchStartTime = moment(getBranchHours.rows[0].start_time, 'HH:mm').add(30, 'minutes').format('HH.mm');
-            let branchEndTime = moment(getBranchHours.rows[0].end_time, 'HH:mm').subtract(30, 'minutes').format('HH:mm');
+            let branchStartTime = moment(getBranchHours.dataValues.start_time, 'HH:mm').add(30, 'minutes').format('HH:mm');
+            let branchEndTime = moment(getBranchHours.dataValues.end_time, 'HH:mm').subtract(30, 'minutes').format('HH:mm');
 
-            const getHolidayHours = await db.query("SELECT * FROM holiday_hours WHERE branch_id = $1 AND $2 >= from_date AND $2 <= to_date AND status = 1", [branch_id, formatedAppointmentDate]);
+            const getHolidayHours = await HolidayHour.findAll({
+                where: {
+                    branch_id: branch_id, // Ensure the branch_id matches
+                    from_date: { [Op.lte]: formatedAppointmentDate }, // Ensure from_date is before or on the given date
+                    to_date: { [Op.gte]: formatedAppointmentDate }, // Ensure to_date is after or on the given date
+                    status: 1 // Ensure the status is active (1)
+                }
+            });
             let isHoliday = false;
             let holidayEndTime = null;
-            if (getHolidayHours.rows.length > 0) {
-                const holidayHours = getHolidayHours.rows;
+            if (getHolidayHours.length > 0) {
+                const holidayHours = getHolidayHours;
                 for (const holiday of holidayHours) {
                     const fromDateTime = moment(holiday.from_date);
                     const toDateTime = moment(holiday.to_date);
@@ -47,7 +70,20 @@ module.exports = {
 
             for (const element of req.body.services) {
                 const service_id = element.service_id;
-                const getServiceDuration = await db.query("select duration,services_options.id as id,services.branch_id from services_options join services on services_options.service_id = services.id WHERE branch_id = $1 AND services.status = $2 AND services_options.id = $3", [branch_id, enums.is_active.yes, service_id]);
+                const getServiceDuration = await ServiceOptions.findAll({
+                    attributes: ['duration', 'id'], // Select specific attributes from services_options
+                    include: [{
+                        model: Services,
+                        attributes: ['branch_id'], // Select specific attributes from services
+                        where: {
+                            branch_id: branch_id,
+                            status: 1,
+                        }
+                    }],
+                    where: {
+                        id: service_id
+                    }
+                });
                 if (getServiceDuration.rowCount === 0) {
                     return res.status(404).json({
                         success: false,
@@ -58,6 +94,7 @@ module.exports = {
                 }
                 const serviceDuration = parseInt(getServiceDuration.rows[0].duration);
                 getServiceTotalDuration += serviceDuration;
+
             }
 
             // Define slot interval (e.g., duration of the longest service)
