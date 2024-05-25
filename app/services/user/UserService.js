@@ -14,6 +14,10 @@ class UserService {
         return await User.findOne({ where: { email, phone_number: phoneNumber } });
     }
 
+    async getUserByEmail(email) {
+        return await User.findOne({ where: { email } , attributes: ['id', 'email', 'password'] });
+    }
+
     async checkTheOtpDoesExist(otp) {
         return await User.findOne({ where: { otp }});
     }
@@ -53,15 +57,19 @@ class UserService {
             {
                 is_verified: 1,
             }
-        )
+        );
     }
 
     async updatePassword(user, userData) {
-        await user.update(userData)
+        await user.update(userData);
+    }
+
+    async updateUser(user, userData) {
+        return await user.update(userData, {returning: true});
     }
 
     async updateOtpAndOtpValidity(user, userData) {
-        await user.update(userData)
+        await user.update(userData);
     }
 }
 

@@ -5,7 +5,8 @@ const bcrypt = require('bcrypt');
 const process = require('process');
 const logger = require(path.join(path.dirname(require.main.filename), 'config', 'Logger.js'));
 const { createTransport } = require(path.join(path.dirname(require.main.filename), 'config', 'Mailer.js'));
-const RegisteredUser = require(path.join(path.dirname(require.main.filename), 'app', 'resource', 'user', 'RegisteredUser.js'))
+const RegisteredUser = require(path.join(path.dirname(require.main.filename), 'app', 'resource', 'user', 'RegisteredUserResource.js'));
+const UserResource = require(path.join(path.dirname(require.main.filename), 'app', 'resource', 'user', 'UserResource.js'));
 
 class UserController {
     constructor(UserService) {
@@ -99,9 +100,9 @@ class UserController {
 
             const userData = {
                 id: body.user_id,
-                otp: otp,
+                otp,
                 otp_validity: otpValidity,
-            }
+            };
 
             this.UserService.updateOtpAndOtpValidity(user, userData);
 
@@ -152,6 +153,60 @@ class UserController {
             });
         } catch (error) {
             logger.error('Error occurred during OTP verification:', error);
+            response.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    }
+
+    async updateUser(request, response) {
+        try {
+            const body = request.body;
+
+            const user = await this.UserService.getUserById(body.user_id);
+
+            if (!user) {
+                throw new Error('User Is Not Found. Please Try Again.');
+            }
+
+            const userData = {
+                name: body.name,
+                email: body.email,
+                phone_number: body.phone_number,
+                date_of_birth: body.date_of_birth,
+            };
+
+            this.UserService.updateUser(user, userData);
+
+            response.status(200).json({
+                success: true,
+                date: new UserResource(user).toArray()
+            });
+        } catch (error) {
+            logger.error('Error occurred during Update:', error);
+            response.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    }
+
+    async getUser(request, response) {
+        try {
+            const body = request.body;
+
+            const user = await this.UserService.getUserById(body.user_id);
+
+            if (!user) {
+                throw new Error('User Is Not Found. Please Try Again.');
+            }
+
+            response.status(200).json({
+                user: new UserResource(user).toArray()
+            });
+        } catch (error) {
+            logger.error('Error occurred during get:', error);
             response.status(400).json({
                 success: false,
                 message: error.message

@@ -2,6 +2,10 @@
 
 require('dotenv').config();
 
+const moment = require('moment-timezone');
+moment.tz('Asia/Kolkata');
+global.moment = moment;
+
 const express = require('express');
 const app = express();
 const adminRoutes = require('./routes/AdminRoute');
