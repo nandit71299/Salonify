@@ -269,6 +269,50 @@ module.exports = {
         }
     },
 
+    async getSalonProfileDetails(req, res) {
+        try {
+            const branch_id = req.query.branch_id;
 
+            // Fetch branch details using Sequelize
+            const branchDetails = await Branch.findOne({
+                where: {
+                    id: branch_id,
+                }
+            });
+
+            if (!branchDetails) {
+                return res.json({
+                    success: false,
+                    message: "Salon/Branch not found.",
+                    data: []
+                })
+            }
+
+            // Extract required details from branchDetails
+            const { saloon_id, name: branch_name, city_id, address, type, seats, latitude, longitude } = branchDetails;
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    saloon_id: saloon_id,
+                    branch_name: branch_name,
+                    city_id: city_id,
+                    address: address,
+                    type: type === 1 ? "Unisex" : type === 2 ? "Men's" : "Women's",
+                    seats: seats,
+                    latitude: latitude,
+                    longitude: longitude
+                },
+                message: "OK"
+            });
+
+        } catch (error) {
+            logger.error("Error Fetching Salon/Branch Details", error);
+            res.status(500).json({
+                success: false,
+                message: "Internal Server Error"
+            });
+        }
+    }
 
 }

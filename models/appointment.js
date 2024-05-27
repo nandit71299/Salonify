@@ -11,9 +11,19 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      Appointment.hasMany(models.AppointmentItems, { foreignKey: 'appointment_id' });
+      Appointment.hasMany(models.AppointmentDiscount, { foreignKey: 'appointment_id' });
+      Appointment.belongsTo(models.User, { foreignKey: 'user_id' });
+      Appointment.belongsTo(models.Branch, { foreignKey: 'branch_id' });
+
     }
   }
   Appointment.init({
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true
+    },
     user_id: DataTypes.INTEGER,
     receipt_number: DataTypes.STRING,
     branch_id: DataTypes.INTEGER,
@@ -30,8 +40,6 @@ module.exports = (sequelize, DataTypes) => {
     start_time: DataTypes.TIME,
     end_time: DataTypes.TIME,
     seat_number: DataTypes.INTEGER,
-    created_at: DataTypes.DATE,
-    updated_at: DataTypes.DATE
   }, {
     sequelize,
     modelName: 'Appointment',

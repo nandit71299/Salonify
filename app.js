@@ -10,4 +10,6 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api', routes);
 
-app.listen(3000, () => {});
+app.listen(3000, () => { });
+
+

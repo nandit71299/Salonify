@@ -9,9 +9,6 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      id: {
-        type: Sequelize.INTEGER
-      },
       user_id: {
         type: Sequelize.INTEGER
       },
@@ -28,7 +25,7 @@ module.exports = {
         type: Sequelize.INTEGER
       },
       appointment_date: {
-        type: Sequelize.DATE
+        type: Sequelize.DATEONLY
       },
       subtotal: {
         type: Sequelize.DECIMAL
@@ -59,12 +56,6 @@ module.exports = {
       },
       seat_number: {
         type: Sequelize.INTEGER
-      },
-      created_at: {
-        type: Sequelize.DATE
-      },
-      updated_at: {
-        type: Sequelize.DATE
       },
       createdAt: {
         allowNull: false,

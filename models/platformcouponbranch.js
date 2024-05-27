@@ -3,28 +3,27 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class Services extends Model {
+  class PlatformCouponBranch extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      Services.hasMany(models.ServiceOptions, { foreignKey: 'service_id', });
-
+      // define association here
+      PlatformCouponBranch.belongsTo(models.PlatformCoupon, {
+        foreignKey: 'platform_coupon_id',
+        as: 'coupon'
+      });
     }
   }
-  Services.init({
-    name: DataTypes.STRING,
-    category_id: DataTypes.INTEGER,
+  PlatformCouponBranch.init({
     branch_id: DataTypes.INTEGER,
-    department_id: DataTypes.INTEGER,
-    additional_information_id: DataTypes.INTEGER,
-    description: DataTypes.STRING,
-    status: DataTypes.INTEGER
+    platform_coupon_id: DataTypes.INTEGER,
+    status: DataTypes.INTEGER,
   }, {
     sequelize,
-    modelName: 'Services',
+    modelName: 'PlatformCouponBranch',
   });
-  return Services;
+  return PlatformCouponBranch;
 };

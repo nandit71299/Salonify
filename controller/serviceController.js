@@ -64,7 +64,7 @@ module.exports = {
                     );
                 };
             });
-            // This will be executed if the transaction is successful
+
             res.status(200).json({ success: true, data: [{ service_id: service_id }], message: "Service Created Successfully" });
         } catch (err) {
             logger.error("Error Creating Service: ", err);
@@ -117,11 +117,11 @@ module.exports = {
             }
 
 
-            res.json({ success: true, data: data, message: "OK" })
+            res.status(200).json({ success: true, data: data, message: "OK" })
 
         }
         catch (error) {
-            logger.erro("Error Fetching Services: ", error);
+            logger.error("Error Fetching Services: ", error);
             res.status(500).json({
                 success: false,
                 message: "Internal Server Error Occured",
@@ -291,8 +291,67 @@ module.exports = {
                 res.status(200).json({ success: true, message: "Service updated successfully.", data: [] });
             });
         } catch (error) {
-            console.error("Error updating service:", error);
-            return res.status(500).json({ success: false, message: "Error updating service.", data: [] });
+            logger.error("Error updating service:", error);
+            res.status(500).json({ success: false, message: "Error updating service.", data: [] });
+        }
+    },
+
+    async getService(req, res) {
+        try {
+            const branch_id = req.query.branch_id;
+            const service_id = req.query.service_id;
+
+            const checkBranchExistence = await Branch.findOne({ where: { id: branch_id, status: 1 } });
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Error Fetching Salon/Branch Details.",
+                    data: [],
+                })
+            }
+
+
+            const serviceData = []
+            const getServiceDetails = await Services.findOne({ where: { branch_id, id: service_id, status: 1 }, attributes: ['id', 'name', 'category_id', 'department_id', 'description'] });
+            if (!getServiceDetails) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Service does not exist or may have been deleted.",
+                    data: []
+                })
+            }
+
+            const getCategoryName = await Category.findOne({ where: { id: getServiceDetails.category_id } });
+            const getDepartmentName = await Department.findOne({ where: { id: getServiceDetails.department_id } });
+            serviceData.push(
+                {
+                    id: getServiceDetails.id,
+                    name: getServiceDetails.name,
+                    category: getCategoryName ? getCategoryName.name : null,
+                    department: getDepartmentName ? getDepartmentName.name : null,
+                }
+            );
+
+            const getServiceOptions = await ServiceOptions.findAll({ where: { service_id, status: 1 }, attributes: ['id', 'service_id', 'name', 'price', 'discount', 'description', 'duration'] });
+            if (!getServiceOptions) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Error Fetching Service Options.",
+                    data: []
+                })
+            }
+
+
+
+            const getServiceAdditionalInformations = await AdditionalInformation.findAll({ where: { service_id: service_id, status: 1 }, attributes: ['id', 'title', 'description'] });
+
+            const data = { service_details: serviceData, services_options: getServiceOptions, additional_information: getServiceAdditionalInformations }
+
+            res.status(200).json({ success: true, data: data, message: "OK" });
+        }
+        catch (error) {
+            logger.error("Error updating service:", error);
+            res.status(500).json({ success: false, message: "Error updating service.", data: [] });
         }
     }
 
