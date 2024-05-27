@@ -398,8 +398,73 @@ module.exports = {
             res.json({ success: true, data: data, message: "OK" });
 
         } catch (error) {
-            console.error("Error fetching sales by service:", error);
+            logger.error("Error fetching sales by service:", error);
             res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
         }
+    },
+
+    async getTopPayingCustomersWithPlatformOffer(req, res) {
+        try {
+            const branchId = req.query.branch_id;
+            const platformCouponId = req.query.platform_coupon_id;
+
+            let dateFilter = {};
+            if (req.query.from_date_range && req.query.to_date_range) {
+                const fromDateRange = moment(req.query.from_date_range).startOf('day').toDate();
+                const toDateRange = moment(req.query.to_date_range).endOf('day').toDate();
+                dateFilter = { appointment_date: { [Op.between]: [fromDateRange, toDateRange] } };
+            }
+
+            const topPayingCustomers = await User.findAll({
+                where: {
+                    user_type: enums.UserType.customer
+                },
+                include: [
+                    {
+                        model: Appointment,
+                        where: {
+                            branch_id: branchId,
+                            status: enums.appointmentType.Closed,
+                            ...dateFilter,
+                        },
+                        include: [
+                            {
+                                model: AppointmentDiscount,
+                                where: { coupon_id: platformCouponId, coupon_type: (enums.coupon_type.platform_coupon).toString() },
+                                attributes: [] // We don't need any attributes from AppointmentDiscount
+                            }
+                        ],
+                        attributes: [] // We don't need any attributes from Appointment
+                    }
+                ],
+                attributes: [
+                    'id',
+                    'name',
+                    [fn('SUM', col('Appointments.total_amount_paid')), 'total_paid_amount'],
+                    [fn('COUNT', col('Appointments.id')), 'total_appointment']
+                ],
+                group: ['User.id'],
+                order: [[fn('SUM', col('Appointments.total_amount_paid')), 'ASC']]
+            });
+
+            const formattedCustomers = topPayingCustomers.map((customer, index) => ({
+                serial_number: index + 1,
+                user_id: customer.id,
+                name: customer.name,
+                total_paid_amount: parseFloat(customer.get('total_paid_amount')).toFixed(2),
+                total_appointment: customer.get('total_appointment')
+            }));
+
+            res.json({ success: true, data: formattedCustomers, message: "OK" });
+
+        } catch (error) {
+            logger.error("Error Fetching Top Paying Customers With Platform Offer: ", error);
+            res.status(500).json({
+                success: false,
+                message: "Internal Server Error",
+                data: []
+            });
+        }
     }
+
 }

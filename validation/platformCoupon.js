@@ -69,7 +69,19 @@ exports.validateGetSalesOverTimeWithPlatformOffer = [
 ]
 
 exports.validateGetSalesByServiceWithPlatformOffer = [
-    check("branch_id").isInt(), check("platform_coupon_id").isInt(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(),
+    check("branch_id").isNumeric(), check("platform_coupon_id").isNumeric(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(),
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+        next();
+    }
+]
+
+exports.validateGetTopPayingCustomersWithPlatformOffer = [
+    check("branch_id").isNumeric(), check("platform_coupon_id").isNumeric(), check("from_date_range").isDate().optional(), check("to_date_range").isDate().optional(),
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

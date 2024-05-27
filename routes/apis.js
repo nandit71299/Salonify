@@ -14,8 +14,9 @@ const sendOtpData = require('../validation/sendotp');
 const updatePasswordData = require('../validation/updatePassword');
 const branch = require('../validation/branch');
 const service = require('../validation/service');
+const serviceOption = require('../validation/serviceOption.js');
 const appointmentData = require('../validation/appointment');
-const offerData = require('../validation/branchOffers.js');
+const offerData = require('../validation/branchOffers');
 const platform_coupon = require('../validation/platformCoupon')
 const analytics = require('../validation/analytics')
 
@@ -26,6 +27,7 @@ const CategoryCotroller = require('../controller/categoriesController')
 const BranchController = require('../controller/branchController');
 const AppointmentController = require('../controller/appointmentController');
 const ServiceController = require('../controller/serviceController');
+const ServiceOptionController = require('../controller/serviceOptionController')
 const OfferController = require('../controller/branchOfferController')
 const PlatformCouponController = require('../controller/platformCouponController')
 const AnalyticsController = require('../controller/analyticsController')
@@ -42,9 +44,9 @@ router.post('/update-password', updatePasswordData.updatePassword, LoginControll
 router.get('/categories', CategoryCotroller.getCategories);
 
 // Branch Hours
-router.post('/branch-hours', branch.validateBranchHours, BranchController.createBranchHours);
-router.put('/branch-hours', branch.validateBranchHours, BranchController.updateBranchHours);
-router.get('/branch-hours', branch.validateGetBranchHours, BranchController.getBranchHours);
+router.post('/store-hours', branch.validateBranchHours, BranchController.createBranchHours);
+router.put('/update-store-hours', branch.validateBranchHours, BranchController.updateBranchHours);
+router.get('/store-hours', branch.validateGetBranchHours, BranchController.getBranchHours);
 
 // Appointment Related
 router.post('/get-branch-vacancy', appointmentData.validateBranchVacancy, AppointmentController.branchvacancy);
@@ -63,9 +65,9 @@ router.get('/holidays', branch.validateGetBranchHoliday, BranchController.getHol
 router.post('/service', service.validateCreateService, ServiceController.createService);
 router.get('/services', service.validateGetAllServices, ServiceController.getAllService);
 router.delete('/services', service.validateDeleteServices, ServiceController.deleteServices);
-router.put('/service', service.validateUpdateService, ServiceController.updateService);
+router.put('/services', service.validateUpdateService, ServiceController.updateService);
 router.get('/service', service.validateGetService, ServiceController.getService);
-
+router.delete('/serviceoption', serviceOption.validateDeleteServiceOption, ServiceOptionController.deleteServiceOption)
 
 // Coupons Related
 router.post('/join-platform-coupon', platform_coupon.validateJoinPlatformCoupon, PlatformCouponController.joinPlatformCoupon)
@@ -92,5 +94,7 @@ router.get('/platform-offers', platform_coupon.validateGetPlatformOffers, Platfo
 router.get('/platform-offer-insights', platform_coupon.validateGetPlatformOfferInsights, PlatformCouponController.getPlatformOfferInsights)
 router.get('/sales-over-time-with-platform-offer', platform_coupon.validateGetSalesOverTimeWithPlatformOffer, PlatformCouponController.getSalesOverTimeWithPlatformOffer)
 router.get('/sales-by-service-with-platform-offer', platform_coupon.validateGetSalesByServiceWithPlatformOffer, PlatformCouponController.getSalesByServiceWithPlatformOffer)
+router.get('/top-paying-customers-with-platform-offer', platform_coupon.validateGetTopPayingCustomersWithPlatformOffer, PlatformCouponController.getTopPayingCustomersWithPlatformOffer)
+
 
 module.exports = router;
