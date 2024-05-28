@@ -11,10 +11,13 @@ module.exports = (sequelize, DataTypes) => {
          */
         static associate(models) {
             // define association here
+            Saloon.hasMany(models.Branch, { foreignKey: 'saloon_id' });
+
         }
     }
     Saloon.init({
         name: DataTypes.STRING,
+        user_id: DataTypes.INTEGER,
         // email: DataTypes.STRING,
         // contact_number: DataTypes.STRING,
         description: DataTypes.STRING,

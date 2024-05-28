@@ -7,24 +7,19 @@ const upload = multer();
 const authMiddleware = require("../config/authMiddleware.js");
 
 // Validators
-const saloonRegistrationData = require('../validation/saloonRegistration');
-const customerLoginData = require('../validation/customerlogin.js');
-const userRegistrationData = require('../validation/userRegistration');
-const sendOtpData = require('../validation/sendotp');
-const updatePasswordData = require('../validation/updatePassword');
+const loginregister = require('../validation/loginregister')
 const branch = require('../validation/branch');
 const service = require('../validation/service');
 const serviceOption = require('../validation/serviceOption.js');
 const appointmentData = require('../validation/appointment');
 const offerData = require('../validation/branchOffers');
-const platform_coupon = require('../validation/platformCoupon')
-const analytics = require('../validation/analytics')
+const platform_coupon = require('../validation/platformCoupon');
+const analytics = require('../validation/analytics');
 
 //Controllers
-const LoginController = require('../controller/loginController');
-const UserController = require('../controller/userController');
+const LoginRegisterController = require('../controller/loginregister')
 const CategoryCotroller = require('../controller/categoriesController')
-const BranchController = require('../controller/branchController');
+const BranchController = require('../controller/branchController.js');
 const AppointmentController = require('../controller/appointmentController');
 const ServiceController = require('../controller/serviceController');
 const ServiceOptionController = require('../controller/serviceOptionController')
@@ -33,12 +28,17 @@ const PlatformCouponController = require('../controller/platformCouponController
 const AnalyticsController = require('../controller/analyticsController')
 
 // Login & Registration
-router.post('/customer-login', customerLoginData.validateCustomerLogin, LoginController.login);
-router.post('/saloon-registration', upload.single('image'), saloonRegistrationData.validateSalonRegistration, LoginController.register);
-router.post('/user-registration', userRegistrationData.validateUserRegistration, UserController.store);
-router.post('/send-otp', sendOtpData.validateSendOtp, UserController.sendOtp);
-router.post('/verify-user', UserController.verify);
-router.post('/update-password', updatePasswordData.updatePassword, LoginController.updatePassword);
+router.post('/customer-login', loginregister.validateCustomerLogin, LoginRegisterController.customerLogin);
+router.post('/registersalon', upload.single('image'), loginregister.validateSalonRegistration, LoginRegisterController.registerSalon);
+router.post('/customer-registration', loginregister.validateCustomerRegistration, LoginRegisterController.customerRegistration);
+router.post('/send-otp', loginregister.validateSendOtp, LoginRegisterController.sendOtp);
+router.post('/verify-user', LoginRegisterController.verify);
+router.put('/update-password', loginregister.updatePassword, LoginRegisterController.updatePassword);
+router.post('/salon-login', loginregister.validateSalonLogin, LoginRegisterController.salonLogin);
+
+// Dashboard
+router.get('/dashboard', branch.validateGetDashboard, BranchController.getDashboard)
+
 
 // Categories
 router.get('/categories', CategoryCotroller.getCategories);

@@ -1,6 +1,8 @@
 const logger = require('../config/logger');
-const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour } = require('../models');
-const { Op, fn, col, where } = require('sequelize');
+const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch } = require('../models');
+const { Op, fn, col } = require('sequelize');
+const enums = require('../enums')
+const fs = require('fs');
 
 module.exports = {
     async createBranchHours(req, res) {
@@ -236,11 +238,11 @@ module.exports = {
     async getHoliday(req, res) {
         const { branch_id } = req.body;
         const checkBranchExistence = await Branch.findOne({ where: { id: branch_id, status: 1 } });
+        if (!checkBranchExistence) {
+            return res.status(404).json({ success: false, message: `No Salon/Branch found with the given ID`, data: [] });
+        }
 
         try {
-            if (!checkBranchExistence) {
-                return res.status(404).json({ success: false, message: `No Salon/Branch found with the given ID`, data: [] });
-            }
 
             const getHolidays = await HolidayHour.findAll({ where: { branch_id: branch_id, status: 1 } });
             if (getHolidays.length === 0) {
@@ -277,32 +279,39 @@ module.exports = {
             const branchDetails = await Branch.findOne({
                 where: {
                     id: branch_id,
+                    status: enums.is_active.yes
                 }
             });
 
             if (!branchDetails) {
-                return res.json({
+                return res.status(404).json({
                     success: false,
                     message: "Salon/Branch not found.",
                     data: []
                 })
             }
 
-            // Extract required details from branchDetails
-            const { saloon_id, name: branch_name, city_id, address, type, seats, latitude, longitude } = branchDetails;
+            const imagePath = branchDetails.image;
+            const image = fs.readFileSync(imagePath);
+            const base64Image = new Buffer.from(image).toString('base64');
+            const response = {
+                id: branchDetails.id,
+                saloon_id: branchDetails.saloon_id,
+                name: branchDetails.name,
+                city: branchDetails.city,
+                address: branchDetails.address,
+                type: branchDetails.type === 1 ? "Unisex" : branchDetails.type === 2 ? "Men's" : branchDetails.type === 3 ? "Women's" : "Unknown",
+                contact: branchDetails.contact,
+                image: base64Image,
+                latitude: branchDetails.latitude,
+                longitude: branchDetails.longitude,
+                seats: branchDetails.seats,
+                status: branchDetails.status,
+            }
 
             res.status(200).json({
                 success: true,
-                data: {
-                    saloon_id: saloon_id,
-                    branch_name: branch_name,
-                    city_id: city_id,
-                    address: address,
-                    type: type === 1 ? "Unisex" : type === 2 ? "Men's" : "Women's",
-                    seats: seats,
-                    latitude: latitude,
-                    longitude: longitude
-                },
+                data: response,
                 message: "OK"
             });
 
@@ -313,6 +322,92 @@ module.exports = {
                 message: "Internal Server Error"
             });
         }
+    },
+
+    async getDashboard(req, res) {
+
+        const userId = req.query.user_id;
+        const branchId = req.query.branch_id;
+
+        try {
+            // Get User Information
+            const user = await User.findOne({
+                where: {
+                    id: userId,
+                    status: enums.is_active.yes,
+                    user_type: enums.UserType.salon_admin
+                }
+            });
+
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: "User not found.",
+                    data: []
+                });
+            }
+
+            // Get Salon Information
+            const salon = await Saloon.findOne({
+                include: {
+                    model: Branch,
+                    where: {
+                        id: branchId,
+                        status: enums.is_active.yes
+                    }
+                },
+                where: {
+                    user_id: userId
+                }
+            });
+
+            if (!salon) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: []
+                });
+            }
+
+            // Get Branches
+            const branches = await Branch.findAll({
+                where: {
+                    saloon_id: salon.id,
+                    status: enums.is_active.yes
+                }
+            });
+
+            // Check if there are any offers available to participate
+            const offersCount = await PlatformCoupon.count({
+                where: {
+                    id: {
+                        [Op.notIn]: sequelize.literal(`(SELECT platform_coupon_id FROM platform_coupon_branch WHERE branch_id = ${branchId})`)
+                    },
+                    status: enums.is_active.yes
+                }
+            });
+
+            const offerbannertoshow = offersCount > 0;
+
+            const data = {
+                user: {
+                    name: user.name,
+                    salon_name: salon.name
+                },
+                branches,
+                offerbannertoshow
+            };
+
+            res.json({ success: true, data, message: "OK" });
+        } catch (error) {
+            logger.error("Error in dashboard route:", error);
+            res.status(500).json({
+                success: false,
+                data: [],
+                message: "Internal server error."
+            });
+        }
+
     }
 
 }
