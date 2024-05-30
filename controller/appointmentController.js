@@ -3,6 +3,7 @@ const moment = require('moment')
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const logger = require('../config/logger')
+moment.tz("Asia/Kolkata");
 
 module.exports = {
     async branchvacancy(req, res) {
@@ -10,11 +11,11 @@ module.exports = {
             const branch_id = req.body.branch_id;
             const formatedAppointmentDate = moment(req.body.appointment_date, 'YYYY-MM-DD').format("YYYY-MM-DD");
             const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
-
+            console.log(weekdayName)
             const checkBranchExistence = await Branch.findOne({
                 where: {
                     id: branch_id,
-                    status: 1,
+                    status: enums.is_active.yes,
                 }
             });
 
@@ -25,9 +26,8 @@ module.exports = {
                     data: [],
                 })
             }
-            const getBranchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: 1 } });
+            const getBranchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: enums.is_active.yes } });
 
-            // const getBranchHours = await db.query("SELECT start_time, end_time FROM branch_hours WHERE branch_id = $1 AND day =$2 ", [branch_id, weekdayName]);
             if (!getBranchHours) {
                 return res.status(409).json({
                     success: false,
@@ -35,37 +35,60 @@ module.exports = {
                     data: []
                 });
             }
-
             let branchStartTime = moment(getBranchHours.dataValues.start_time, 'HH:mm').add(30, 'minutes').format('HH:mm');
             let branchEndTime = moment(getBranchHours.dataValues.end_time, 'HH:mm').subtract(30, 'minutes').format('HH:mm');
+            console.log("Initial Start Time:", branchStartTime)
+            if (moment(formatedAppointmentDate).isSame(moment().startOf('day'))) {
+                branchStartTime = moment().startOf('minute').add(30, 'minutes').format("HH:mm");
+            }
 
             const getHolidayHours = await HolidayHour.findAll({
                 where: {
                     branch_id: branch_id, // Ensure the branch_id matches
                     from_date: { [Op.lte]: formatedAppointmentDate }, // Ensure from_date is before or on the given date
                     to_date: { [Op.gte]: formatedAppointmentDate }, // Ensure to_date is after or on the given date
-                    status: 1 // Ensure the status is active (1)
+                    status: enums.is_active.yes // Ensure the status is active (1)
                 }
             });
+
             let isHoliday = false;
             let holidayEndTime = null;
             if (getHolidayHours.length > 0) {
-                const holidayHours = getHolidayHours;
-                for (const holiday of holidayHours) {
+
+                for (const holiday of getHolidayHours) {
                     const fromDateTime = moment(holiday.from_date);
                     const toDateTime = moment(holiday.to_date);
-                    // TODO below condition is kind of a bug, i suppose.
-                    if (moment(formatedAppointmentDate).isBetween(fromDateTime, toDateTime, null, '[]')) {
+                    if (moment(formatedAppointmentDate, "YYYY-MM-DD HH:mm:ss").isBetween(fromDateTime, toDateTime, null, '[]')) {
                         isHoliday = true;
-                        holidayEndTime = toDateTime.format('HH:mm');
+
+                        // Check if the holiday end date is the same as the current date
+                        if (moment(formatedAppointmentDate).isSame(toDateTime, 'day')) {
+                            holidayEndTime = toDateTime.format('HH:mm');
+
+                            // Ensure branch end time is before holiday end time
+                            if (moment(branchEndTime, 'HH:mm').isBefore(moment(holidayEndTime, 'HH:mm'))) {
+                                branchEndTime = branchEndTime;
+                            }
+                            if (moment(branchStartTime, 'HH:mm').isAfter(moment(holidayEndTime, 'HH:mm'))) {
+                                holidayEndTime = branchStartTime;
+                            }
+                        } else {
+                            return res.status(404).json({
+                                success: false,
+                                message: "Salon/Branch is on Holiday on Selected Date.",
+                                data: []
+                            });
+                        }
                         break;
                     }
                 }
             }
             if (isHoliday) {
                 // Set branch start time to holiday end time
-                branchStartTime = holidayEndTime;
+                branchStartTime = moment(holidayEndTime, "HH:mm").add(30, 'minutes');
             }
+            console.log("2 Start Time:", branchStartTime)
+
 
             let getServiceTotalDuration = 0;
 
@@ -75,7 +98,6 @@ module.exports = {
                     attributes: ['duration', 'id'],
                     include: [{
                         model: Services,
-                        as: 'service',
                         attributes: ['branch_id'],
                         where: {
                             branch_id: branch_id,
@@ -110,7 +132,7 @@ module.exports = {
 
             // Generate slots until the adjusted branch end time
             let currentSlotStartTime = moment(branchStartTime, 'HH:mm'); // Start from the adjusted start time
-            while (currentSlotStartTime.isSameOrBefore(moment(branchEndTime, 'HH:mm'))) {
+            while (currentSlotStartTime.isSameOrBefore(moment(branchEndTime, 'HH:mm').subtract(getServiceTotalDuration, 'minutes'))) {
                 const slotEndTime = currentSlotStartTime.clone().add(slotInterval, 'minutes');
                 slots.push({
                     start_time: currentSlotStartTime.format('HH:mm'),

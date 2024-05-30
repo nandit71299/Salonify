@@ -3,6 +3,9 @@ const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const fs = require('fs');
+const moment = require('moment');
+moment.tz("Asia/Kolkata");
+
 
 module.exports = {
     async createBranchHours(req, res) {
@@ -32,7 +35,13 @@ module.exports = {
 
                     // Insert store hours into the database
                     await BranchHour.create(
-                        { branch_id: branch_id, day: day, start_time: start_time, end_time: end_time, status: status },
+                        {
+                            branch_id: branch_id,
+                            day: day.toLowerCase(),
+                            start_time: moment(start_time, "HH:mm").format("HH:mm"),
+                            end_time: moment(end_time, "HH:mm").format("HH:mm"),
+                            status: status
+                        },
                         { transaction }
                     );
                 }
@@ -63,8 +72,8 @@ module.exports = {
 
                 const id = data.id;
                 const day = data.day;
-                const start_time = data.start_time;
-                const end_time = data.end_time;
+                const start_time = moment(data.start_time, "HH:mm").format("HH:mm");
+                const end_time = moment(data.end_time, "HH:mm").format("HH:mm");
                 const status = data.status;
 
                 branch_hours.push({
@@ -106,10 +115,12 @@ module.exports = {
                     // Insert store hours into the database
                     await BranchHour.update(
                         {
-                            start_time: start_time, end_time: end_time, status: status
+                            start_time: moment(start_time, "HH:mm").format("HH:mm"),
+                            end_time: moment(end_time, "HH:mm").format("HH:mm"),
+                            status: status
                         },
                         {
-                            where: { day: day, branch_id: branch_id }
+                            where: { day: day.toLowerCase(), branch_id: branch_id }
                         },
                         { transaction }
                     );
@@ -139,17 +150,26 @@ module.exports = {
                         branch_id: branch_id,
                         status: 1,
                         [Op.and]: [
-                            { from_date: { [Op.lte]: to_date } },
-                            { to_date: { [Op.gte]: from_date } }
+                            { from_date: { [Op.lte]: moment(to_date, "YYYY-MM-DD HH:mm").format("YYYY-MM-DD HH:mm:ss") } },
+                            { to_date: { [Op.gte]: moment(from_date, "YYYY-MM-DD HH:mm").format("YYYY-MM-DD HH:mm:ss") } }
                         ]
                     }
                 });
                 if (checkExisting[0].dataValues.overlap_count > 0) {
-                    res.status(409).json({ success: false, message: "We're unable to save the new holiday hours because they overlap with existing holiday hours. Please select a different time period or modify existing one.", data: [] });
+                    return res.status(409).json({ success: false, message: "We're unable to save the new holiday hours because they overlap with existing holiday hours. Please select a different time period or modify existing one.", data: [] });
                 } else {
                     // Insert holiday hours
-                    const insertHoliday = await HolidayHour.create({ branch_id: branch_id, from_date: from_date, to_date: to_date, status: 1 }, { returning: true }, { transaction });
-                    res.status(201).json({ success: true, message: 'Holiday hours added successfully', data: { id: insertHoliday.dataValues.id } });
+                    const insertHoliday = await HolidayHour.create({
+                        branch_id: branch_id,
+                        from_date: moment(from_date, "YYYY-MM-DD HH:mm").format("YYYY-MM-DD HH:mm:ss"),
+                        to_date: moment(to_date, "YYYY-MM-DD HH:mm").format("YYYY-MM-DD HH:mm:ss"),
+                        status: enums.is_active.yes
+                    }, { returning: true }, { transaction });
+                    res.status(201).json({
+                        success: true,
+                        message: 'Holiday hours added successfully',
+                        data: { id: insertHoliday.dataValues.id }
+                    });
                 }
             } catch (error) {
                 logger.error("Error Creating Holiday: ", error);
@@ -161,7 +181,7 @@ module.exports = {
     },
 
     async deleteHoliday(req, res) {
-        const { branch_id, id } = req.body;
+        const { branch_id, id } = req.query;
         await sequelize.transaction(async (transaction) => {
             try {
 
@@ -170,7 +190,7 @@ module.exports = {
                     return res.status(404).json({ success: false, message: `No Salon/Branch found with the given ID`, data: [] });
                 }
 
-                const validateHoliday = await HolidayHour.find({ where: { branch_id: branch_id, status: 1 } });
+                const validateHoliday = await HolidayHour.findOne({ where: { branch_id: branch_id, status: 1 } });
                 if (!validateHoliday) {
                     return res.status(404).json({
                         success: false,
@@ -219,6 +239,10 @@ module.exports = {
         if (!checkBranchExistence) {
             return res.status(404).json({ success: false, message: `No Salon/Branch found with the given ID`, data: [] });
         }
+        const checkHolidayExistence = await HolidayHour.findOne({ where: { id: id } });
+        if (!checkHolidayExistence) {
+            return res.status(404).json({ success: false, message: `Holiday Not Found`, data: [] });
+        }
         await sequelize.transaction(async (transaction) => {
             try {
                 await HolidayHour.update({ from_date: from_date, to_date: to_date }, { where: { branch_id: branch_id, id: id }, returning: true }, { transaction })
@@ -236,15 +260,15 @@ module.exports = {
     },
 
     async getHoliday(req, res) {
-        const { branch_id } = req.body;
-        const checkBranchExistence = await Branch.findOne({ where: { id: branch_id, status: 1 } });
+        const { branch_id } = req.query;
+        const checkBranchExistence = await Branch.findOne({ where: { id: branch_id, status: enums.is_active.yes } });
         if (!checkBranchExistence) {
             return res.status(404).json({ success: false, message: `No Salon/Branch found with the given ID`, data: [] });
         }
 
         try {
 
-            const getHolidays = await HolidayHour.findAll({ where: { branch_id: branch_id, status: 1 } });
+            const getHolidays = await HolidayHour.findAll({ where: { branch_id: branch_id, status: enums.is_active.yes } });
             if (getHolidays.length === 0) {
                 return res.status(200).json({
                     success: true,
@@ -253,20 +277,27 @@ module.exports = {
                 })
             }
 
+            const data = [];
             if (getHolidays) {
-                const data = [];
                 for (const holiday of getHolidays) {
-                    data.push(holiday.dataValues);
+                    // from_date:moment(holiday.dataValues.from_date, "YYYY-MM-DD HH:mm:ss").format("YYYY-MM-DD HH:mm:ss"))
+                    const id = holiday.dataValues.id;
+                    const branch_id = holiday.dataValues.branch_id;
+                    const from_date = moment(holiday.dataValues.from_date).format("YYYY-MM-DD HH:mm:ss");
+                    const to_date = moment(holiday.dataValues.to_date).format("YYYY-MM-DD HH:mm:ss");
+                    const status = holiday.dataValues.status;
+
+                    data.push({ id, branch_id, from_date, to_date, status });
                 }
-                return res.status(200).json({
-                    success: true,
-                    message: "OK",
-                    data: data
-                })
             }
+            return res.status(200).json({
+                success: true,
+                message: "OK",
+                data: data
+            })
 
         } catch (error) {
-            logger.log("Error getting holidays: ", error);
+            logger.error("Error getting holidays: ", error);
             res.status(500).json({ success: false, message: 'Internal server error', data: [] });
         }
     },

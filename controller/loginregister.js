@@ -77,32 +77,38 @@ module.exports = {
     async registerSalon(req, res) {
 
         const {
-            email,
-            password,
+            //Persoal details
             personalName,
+            email,
             phoneNumber,
-            dob,
+            //Salon Details
             salon_name,
             contact_number,
             salon_description,
-            location,
-            address,
             type,
             seats,
-            image,
+            address,
+            location,
             city,
             latitude,
-            longitude
+            longitude,
+            password,
         } = req.body;
 
+        //Get Image File
         const imageFile = req.file;
+        // If no Image file provided. Send Error
         if (!imageFile) {
             return res.status(400).json({ success: false, message: "Image is required", data: [] });
         }
+        // If no Invalid file provided. Send Error
         if (imageFile.mimetype !== 'image/jpeg' && imageFile.mimetype !== 'image/png' && imageFile.mimetype !== 'image/jpg') {
             return res.status(400).json({ success: false, message: "Invalid image type. Only JPEG and PNG are allowed.", data: [] });
         }
+
+        // Check if the user email belongs to unverified users?
         const unverifiedUser = await User.findOne({ where: { email, status: enums.is_active.unverified, user_type: enums.UserType.salon_admin } });
+        //IF yes ,send error and ask to login
         if (unverifiedUser) {
             return res.status(409).json({
                 success: false,
@@ -111,31 +117,33 @@ module.exports = {
                 data: []
             });
         }
-
+        // check if user entered email alreadys exists?
         const checkEmailExistence = await User.findOne({ where: { email } });
+        // if yes return with error
         if (checkEmailExistence) {
             return res.status(409).json({ success: false, message: "A user is already registered with this email address.", data: [] });
         }
-
+        // check if user entered phone number already exists?
         const checkPhoneNumberExistence = await User.findOne({ where: { phone_number: phoneNumber } });
+        // if yes return with error
         if (checkPhoneNumberExistence) {
             return res.status(409).json({ success: false, message: "A user is already registered with this phone number.", data: [] });
         }
 
 
-
+        // hash the password
         const hashedPassword = await bcrypt.hash(password, parseInt(process.env.SALTROUNDS, 10));
 
         try {
             await sequelize.transaction(async (transaction) => {
-
+                // save the file
                 const filePath = path.join(__dirname, '..', 'public', 'salon_images', imageFile.originalname);
                 await fs.promises.writeFile(filePath, imageFile.buffer);
-
+                // generate otp
                 const otp = await generateRandomFiveDigitNumber();
-
+                // set otp validity
                 const otpValidity = moment().add(20, "minutes").format();
-
+                // create user
                 const user = await User.create({
                     name: personalName,
                     phone_number: phoneNumber,
@@ -147,6 +155,7 @@ module.exports = {
                     otp_validity: otpValidity,
                 }, { transaction }, { returning: true });
 
+                // create entry in salon table
                 const salon = await Saloon.create({
                     name: salon_name,
                     user_id: user.id,
@@ -154,6 +163,7 @@ module.exports = {
                     status: 1
                 }, { transaction });
 
+                // create entry in branch table
                 await Branch.create({
                     saloon_id: salon.id,
                     user_id: user.id,
@@ -169,6 +179,7 @@ module.exports = {
                     image: filePath
                 }, { transaction });
 
+                // send mail with otp for email verification
                 const mailOptions = {
                     from: process.env.FROM_EMAIL_USER,
                     to: email,
@@ -191,6 +202,7 @@ module.exports = {
                 })
 
             });
+            // if all operations succeeds return with success message
             res.status(201).json({ success: true, message: `Registration successful. Please enter OTP we sent to ${email}.`, data: [] });
         } catch (error) {
             logger.error("Error occurred during registration:", error);
@@ -386,53 +398,61 @@ module.exports = {
                 success: false,
                 data: [],
                 message: "User not found"
-            })
+            });
         }
-
+        let sendMail = true;
         try {
             await sequelize.transaction(async (transaction) => {
                 const otp = await generateRandomFiveDigitNumber();
                 const otp_validity = moment().add(20, "minutes").format();
-                const updateUser = await User.update(
+
+                await User.update(
                     { otp: otp, otp_validity: otp_validity },
                     {
-                        where: {
-                            email: email,
-                        },
-                    }, { transaction }
+                        where: { email: email },
+                        transaction // Add the transaction object here
+                    }
                 );
 
                 const mailOptions = {
                     from: process.env.FROM_EMAIL_USER,
                     to: findUser.email,
                     subject: 'Verify your email address',
-                    html: `Hello ${findUser.email} please use below verification OTP < br >
-                <b style="font-size:42px">${otp}</b>`
+                    html: `Hello ${findUser.email}, please use the below verification OTP <br>
+                           <b style="font-size:42px">${otp}</b>`
                 };
-
-                createTransport().sendMail(mailOptions, (error, info) => {
-                    if (error) {
-                        logger.error("Error sending verification email:", error);
-                        response.status(500).json({ success: false, message: 'Error sending verification email', data: [], error: error });
-                    } else {
-                        response.status(201).json({
-                            success: true, message: `Please enter OTP we sent to ${findUser.email
-                                }`, data: [findUser.dataValues]
-                        });
-                    }
-                })
+                sendMail = await new Promise((resolve, reject) => {
+                    createTransport().sendMail(mailOptions, (error, info) => {
+                        if (error) {
+                            logger.error("Error sending verification email:", error);
+                            resolve(false);
+                        } else {
+                            resolve(true);
+                        }
+                    });
+                });
             })
-        }
-        catch (error) {
+            if (sendMail) {
+                response.status(201).json({
+                    success: true,
+                    message: `Please enter OTP we sent to ${findUser.email}`,
+                    data: [findUser.dataValues]
+                });
+            } else {
+                console.log(sendMail)
+                response.status(500).json({ success: false, message: 'Error sending verification email', data: [] });
+            }
+        } catch (error) {
             logger.error("Error Sending OTP:", error);
-            response.status(500).json({
+            return response.status(500).json({
                 success: false,
                 message: "Internal Server Error",
-                error: error,
                 data: []
-            })
+            });
         }
     },
+
+
 
     async salonLogin(req, res) {
         try {
@@ -459,38 +479,36 @@ module.exports = {
                     {
                         where: {
                             email: email,
-                            user_type: enums.UserType.customer,
+                            user_type: enums.UserType.salon_admin,
                             status: enums.is_active.unverified
                         }
                     }
                 );
                 const mailOptions = {
                     from: process.env.FROM_EMAIL_USER,
-                    to: email,
+                    to: user.email,
                     subject: 'Verify your email address',
-                    html: `Hello ${user.name}, please use below verification OTP < br >
+                    html: `Hello ${user.name}, please use below verification OTP <br>
                     <b style="font-size:42px">${otp}</b>`
                 };
 
                 createTransport().sendMail(mailOptions, (error, info) => {
                     if (error) {
                         logger.error("Error sending verification email:", error);
-                        response.status(500).json({ success: false, message: 'Internal Server Error', data: [] });
+                        return res.status(500).json({ success: false, message: 'Internal Server Error', data: [] });
                     } else {
-                        response.status(201).json({
-                            success: true, message: `Please enter OTP we sent to ${user.email
-                                }`, data: [user.dataValues], isVerfied: user.status === enums.is_active.yes ? true : false,
+                        return res.status(200).json({
+                            success: true,
+                            message: 'Please Complete Email Verification. OTP for Email verification is sent to your email address',
+                            data: user
                         });
                     }
-                })
-                return res.status(200).json({ success: true, message: 'Please Complete Email Verification. OTP for Email verification is sent to your email address', data: user });
-
+                });
+                return;
             }
             const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
             res.status(200).json({ success: true, message: 'Login Successfull', data: user, token });
-
-
         }
         catch (error) {
             logger.error("Error occurred during registration:", error);

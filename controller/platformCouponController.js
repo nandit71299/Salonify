@@ -110,6 +110,14 @@ module.exports = {
     async getPlatformOffers(req, res) {
         try {
             const branch_id = req.query.branch_id;
+            const checkBranchExistence = await Branch.findOne({ where: { id: branch_id } });
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: [],
+                })
+            }
 
             // Fetch all platform offers
             const getOffers = await PlatformCoupon.findAll();
@@ -170,6 +178,23 @@ module.exports = {
             const platformCouponId = req.query.platform_coupon_id;
             let fromDateRange = req.query.from_date_range;
             let toDateRange = req.query.to_date_range;
+
+            const checkBranchExistence = await Branch.findOne({ where: { id: branchId } });
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: [],
+                })
+            }
+            const checkPlatformCoupon = await PlatformCoupon.findOne({ where: { id: platformCouponId, status: enums.is_active.yes } })
+            if (!checkPlatformCoupon) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Invalid Platform Coupon",
+                    data: [],
+                })
+            }
 
             let dateFilter = {};
             if (fromDateRange && toDateRange) {
@@ -257,7 +282,6 @@ module.exports = {
                 group: ['User.id'], // Group only by user ID
             });
 
-
             res.status(200).json({
                 success: true,
                 data: {
@@ -283,6 +307,22 @@ module.exports = {
             let toDateRange = req.query.to_date_range;
 
             let dateFilter = {}
+            const checkBranchExistence = await Branch.findOne({ where: { id: branchId } });
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: [],
+                })
+            }
+            const checkPlatformCoupon = await PlatformCoupon.findOne({ where: { id: platformCouponId, status: enums.is_active.yes } })
+            if (!checkPlatformCoupon) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Invalid Platform Coupon",
+                    data: [],
+                })
+            }
 
 
             if (fromDateRange && toDateRange) {
@@ -332,6 +372,24 @@ module.exports = {
         const platformCouponId = req.query.platform_coupon_id;
         let fromDateRange = req.query.from_date_range;
         let toDateRange = req.query.to_date_range;
+
+        const checkBranchExistence = await Branch.findOne({ where: { id: branchId } });
+        if (!checkBranchExistence) {
+            return res.status(404).json({
+                success: false,
+                message: "Salon/Branch not found",
+                data: [],
+            })
+        }
+        const checkPlatformCoupon = await PlatformCoupon.findOne({ where: { id: platformCouponId, status: enums.is_active.yes } })
+        if (!checkPlatformCoupon) {
+            return res.status(404).json({
+                success: false,
+                message: "Invalid Platform Coupon",
+                data: [],
+            })
+        }
+
         // If date range provided, format them using moment
         let dateFilter = {};
         if (fromDateRange && toDateRange) {
@@ -385,6 +443,13 @@ module.exports = {
                 order: [[sequelize.literal('service_name'), 'ASC']] // Ensure correct ordering syntax
             });
 
+            if (appointments.length < 1) {
+                return res.status(200).json({
+                    success: true,
+                    data: [],
+                    message: "No appointments found with this offer or in given date range."
+                });
+            }
 
             // return console.log(appointments)
             // Formatting the result
@@ -409,6 +474,24 @@ module.exports = {
             const platformCouponId = req.query.platform_coupon_id;
 
             let dateFilter = {};
+
+            const checkBranchExistence = await Branch.findOne({ where: { id: branchId } });
+            if (!checkBranchExistence) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found",
+                    data: [],
+                })
+            }
+            const checkPlatformCoupon = await PlatformCoupon.findOne({ where: { id: platformCouponId, status: enums.is_active.yes } })
+            if (!checkPlatformCoupon) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Invalid Platform Coupon",
+                    data: [],
+                })
+            }
+
             if (req.query.from_date_range && req.query.to_date_range) {
                 const fromDateRange = moment(req.query.from_date_range).startOf('day').toDate();
                 const toDateRange = moment(req.query.to_date_range).endOf('day').toDate();
@@ -446,6 +529,14 @@ module.exports = {
                 group: ['User.id'],
                 order: [[fn('SUM', col('Appointments.total_amount_paid')), 'ASC']]
             });
+
+            if (topPayingCustomers.length < 1) {
+                return res.status(200).json({
+                    success: true,
+                    data: [],
+                    message: "No appointments found with this offer or in given date range."
+                });
+            }
 
             const formattedCustomers = topPayingCustomers.map((customer, index) => ({
                 serial_number: index + 1,

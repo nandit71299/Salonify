@@ -22,6 +22,25 @@ module.exports = {
             const description = jsonData.description;
             const department_id = jsonData.department_id;
 
+
+            const checkCategory = await Category.findOne({ where: { id: category_id } });
+            if (!checkCategory) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Selected Category Not Found. Please Choose Different Category Or Contact Customer Support ",
+                    data: [],
+                })
+            }
+
+            const checkDepartment = await Department.findOne({ where: { id: department_id } });
+            if (!checkDepartment) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Selected Department Not Found. Please Choose Different Department or Contact Customer Support ",
+                    data: [],
+                })
+            }
+
             const transact = await sequelize.transaction(async (transaction) => {
                 const insertService = await Services.create(
                     {
@@ -78,7 +97,7 @@ module.exports = {
         if (!checkBranchExistence) {
             return res.status(404).json({
                 success: false,
-                message: "Error Fetching Salon/Branch Details.",
+                message: "Salon/Branch Not Found.",
                 data: [],
             })
         }

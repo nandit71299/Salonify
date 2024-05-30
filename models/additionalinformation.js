@@ -17,7 +17,10 @@ module.exports = (sequelize, DataTypes) => {
     title: DataTypes.STRING,
     description: DataTypes.STRING,
     service_id: DataTypes.INTEGER,
-    status: DataTypes.INTEGER
+    status: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1 // Set default value to 1
+    }
   }, {
     sequelize,
     modelName: 'AdditionalInformation',

@@ -16,6 +16,19 @@ exports.validateCustomerLogin = [
     }
 ];
 
+exports.validateVerifyUser = [
+    check("email").trim().isEmail(),
+    check('otp').isNumeric(),
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return res.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+        next();
+    }
+
+]
 
 exports.validateSalonRegistration = [
     check("email").trim().isEmail(),

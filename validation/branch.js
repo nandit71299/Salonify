@@ -122,8 +122,8 @@ exports.validateInsertBranchHoliday = [
 ];
 
 exports.validateDeleteBranchHoliday = [
-    body('id').isNumeric().withMessage("ID must be interger"),
-    body('branch_id').isNumeric().withMessage('Branch ID must be an integer'),
+    check('id').isNumeric().withMessage("ID must be interger"),
+    check('branch_id').isNumeric().withMessage('Branch ID must be an integer'),
     (request, response, next) => {
         const errors = validationResult(request);
         if (!errors.isEmpty()) {
@@ -140,7 +140,7 @@ exports.validateUpdateBranchHoliday = [
     check("branch_id").isNumeric().withMessage("Branch ID should be numeric"),
     check("from_date").isISO8601().withMessage("Invalid Date and Time Format"),
     check("to_date").isISO8601().withMessage("Invalid Date and Time Format"),
-    body('from_date').custom((value, { req }) => {
+    check('from_date').custom((value, { req }) => {
         const from_date = moment(req.body.from_date, "YYYY-MM-DD HH:mm:ss").format("YYYY-MM-DD HH:mm:ss");
         const currentDate = moment().format("YYYY-MM-DD HH:mm:ss");
         if (moment(from_date).isBefore(currentDate)) {

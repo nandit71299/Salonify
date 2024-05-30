@@ -28,13 +28,13 @@ const PlatformCouponController = require('../controller/platformCouponController
 const AnalyticsController = require('../controller/analyticsController')
 
 // Login & Registration
-router.post('/customer-login', loginregister.validateCustomerLogin, LoginRegisterController.customerLogin);
 router.post('/registersalon', upload.single('image'), loginregister.validateSalonRegistration, LoginRegisterController.registerSalon);
-router.post('/customer-registration', loginregister.validateCustomerRegistration, LoginRegisterController.customerRegistration);
-router.post('/send-otp', loginregister.validateSendOtp, LoginRegisterController.sendOtp);
-router.post('/verify-user', LoginRegisterController.verify);
-router.put('/update-password', loginregister.updatePassword, LoginRegisterController.updatePassword);
 router.post('/salon-login', loginregister.validateSalonLogin, LoginRegisterController.salonLogin);
+router.post('/customer-registration', loginregister.validateCustomerRegistration, LoginRegisterController.customerRegistration);
+router.post('/customer-login', loginregister.validateCustomerLogin, LoginRegisterController.customerLogin);
+router.post('/send-otp', loginregister.validateSendOtp, LoginRegisterController.sendOtp);
+router.post('/verify-user', loginregister.validateVerifyUser, LoginRegisterController.verify);
+router.put('/update-password', loginregister.updatePassword, LoginRegisterController.updatePassword);
 
 // Dashboard
 router.get('/dashboard', branch.validateGetDashboard, BranchController.getDashboard)
