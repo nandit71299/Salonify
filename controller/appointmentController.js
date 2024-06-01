@@ -5,187 +5,76 @@ const enums = require('../enums')
 const logger = require('../config/logger')
 moment.tz("Asia/Kolkata");
 
+
+
 module.exports = {
     async branchvacancy(req, res) {
+        const { branch_id, appointment_date, services } = req.body;
+
+        if (!branch_id || !appointment_date || !Array.isArray(services) || services.length === 0) {
+            return res.status(400).json({ success: false, message: "Missing required parameters." });
+        }
+
+        const formatedAppointmentDate = moment(appointment_date, 'YYYY-MM-DD').format("YYYY-MM-DD");
+        const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
+
         try {
-            const branch_id = req.body.branch_id;
-            const formatedAppointmentDate = moment(req.body.appointment_date, 'YYYY-MM-DD').format("YYYY-MM-DD");
-            const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
-            console.log(weekdayName)
-            const checkBranchExistence = await Branch.findOne({
-                where: {
-                    id: branch_id,
-                    status: enums.is_active.yes,
-                }
+            const branch = await Branch.findOne({ where: { id: branch_id, status: 1 } });
+            if (!branch) {
+                return res.status(404).json({ success: false, message: "Salon/Branch not found", data: [] });
+            }
+
+            const branchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: 1 } });
+            if (!branchHours) {
+                return res.status(409).json({ success: false, message: "Branch is closed on the selected day.", data: [] });
+            }
+
+            const appointmentDate = moment(formatedAppointmentDate);
+
+            let branchStartTime = appointmentDate.clone().set({
+                'hour': moment(branchHours.start_time, 'HH:mm').hours(),
+                'minute': moment(branchHours.start_time, 'HH:mm').minutes(),
+                'second': 0,
+                'millisecond': 0
+            }).add(15, 'minutes');
+
+            let branchEndTime = appointmentDate.clone().set({
+                'hour': moment(branchHours.end_time, 'HH:mm').hours(),
+                'minute': moment(branchHours.end_time, 'HH:mm').minutes(),
+                'second': 0,
+                'millisecond': 0
             });
 
-            if (!checkBranchExistence) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Salon/Branch not found",
-                    data: [],
-                })
-            }
-            const getBranchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: enums.is_active.yes } });
-
-            if (!getBranchHours) {
-                return res.status(409).json({
-                    success: false,
-                    message: "Branch is closed on the selected day.",
-                    data: []
-                });
-            }
-            let branchStartTime = moment(getBranchHours.dataValues.start_time, 'HH:mm').add(30, 'minutes').format('HH:mm');
-            let branchEndTime = moment(getBranchHours.dataValues.end_time, 'HH:mm').subtract(30, 'minutes').format('HH:mm');
-            console.log("Initial Start Time:", branchStartTime)
             if (moment(formatedAppointmentDate).isSame(moment().startOf('day'))) {
-                branchStartTime = moment().startOf('minute').add(30, 'minutes').format("HH:mm");
+                branchStartTime = moment().startOf('minute').add(30, 'minutes');
+                if (branchStartTime.isAfter(branchEndTime)) {
+                    return res.status(409).json({ success: false, message: "Branch is already closed for the day.", data: [] });
+                }
             }
 
-            const getHolidayHours = await HolidayHour.findAll({
+            const holidayHours = await HolidayHour.findAll({
                 where: {
-                    branch_id: branch_id, // Ensure the branch_id matches
-                    from_date: { [Op.lte]: formatedAppointmentDate }, // Ensure from_date is before or on the given date
-                    to_date: { [Op.gte]: formatedAppointmentDate }, // Ensure to_date is after or on the given date
-                    status: enums.is_active.yes // Ensure the status is active (1)
+                    branch_id: branch_id,
+                    status: 1,
+                    from_date: {
+                        [Op.lte]: moment(formatedAppointmentDate).endOf('day').toDate()
+                    },
+                    to_date: {
+                        [Op.gte]: moment(formatedAppointmentDate).startOf('day').toDate()
+                    }
                 }
             });
 
-            let isHoliday = false;
-            let holidayEndTime = null;
-            if (getHolidayHours.length > 0) {
-
-                for (const holiday of getHolidayHours) {
-                    const fromDateTime = moment(holiday.from_date);
-                    const toDateTime = moment(holiday.to_date);
-                    if (moment(formatedAppointmentDate, "YYYY-MM-DD HH:mm:ss").isBetween(fromDateTime, toDateTime, null, '[]')) {
-                        isHoliday = true;
-
-                        // Check if the holiday end date is the same as the current date
-                        if (moment(formatedAppointmentDate).isSame(toDateTime, 'day')) {
-                            holidayEndTime = toDateTime.format('HH:mm');
-
-                            // Ensure branch end time is before holiday end time
-                            if (moment(branchEndTime, 'HH:mm').isBefore(moment(holidayEndTime, 'HH:mm'))) {
-                                branchEndTime = branchEndTime;
-                            }
-                            if (moment(branchStartTime, 'HH:mm').isAfter(moment(holidayEndTime, 'HH:mm'))) {
-                                holidayEndTime = branchStartTime;
-                            }
-                        } else {
-                            return res.status(404).json({
-                                success: false,
-                                message: "Salon/Branch is on Holiday on Selected Date.",
-                                data: []
-                            });
-                        }
-                        break;
-                    }
-                }
-            }
-            if (isHoliday) {
-                // Set branch start time to holiday end time
-                branchStartTime = moment(holidayEndTime, "HH:mm").add(30, 'minutes');
-            }
-            console.log("2 Start Time:", branchStartTime)
-
-
-            let getServiceTotalDuration = 0;
-
-            for (const element of req.body.services) {
-                const service_id = element.service_id;
-                const getServiceDuration = await ServiceOptions.findAll({
-                    attributes: ['duration', 'id'],
-                    include: [{
-                        model: Services,
-                        attributes: ['branch_id'],
-                        where: {
-                            branch_id: branch_id,
-                            status: 1,
-                        }
-                    }],
-                    where: {
-                        id: service_id
-                    }
-                });
-
-                if (getServiceDuration.length < 1) {
-                    return res.status(404).json({
-                        success: false,
-                        message: "Could'nt find one or more services.",
-                        data: []
-                    })
-                    break;
-                }
-                for (const service of getServiceDuration) {
-                    const serviceDuration = parseInt(service.duration);
-                    getServiceTotalDuration += serviceDuration;
-                }
+            const serviceDurationResult = await getTotalServiceDuration(services, branch_id);
+            if (!serviceDurationResult.success) {
+                return res.status(404).json(serviceDurationResult);
             }
 
+            const serviceDuration = serviceDurationResult.data; // Total service duration in minutes
+            const slotInterval = serviceDuration + 15; // Slot interval in minutes
 
-            // Define slot interval (e.g., duration of the longest service)
-            const slotInterval = getServiceTotalDuration + 15; // You can adjust this according to your requirements
+            const { availableSlots, unavailableSlots } = await generateSlots(branchStartTime, branchEndTime, serviceDuration, slotInterval, holidayHours, branch_id, formatedAppointmentDate);
 
-            // Initialize array to store slots
-            const slots = [];
-
-            // Generate slots until the adjusted branch end time
-            let currentSlotStartTime = moment(branchStartTime, 'HH:mm'); // Start from the adjusted start time
-            while (currentSlotStartTime.isSameOrBefore(moment(branchEndTime, 'HH:mm').subtract(getServiceTotalDuration, 'minutes'))) {
-                const slotEndTime = currentSlotStartTime.clone().add(slotInterval, 'minutes');
-                slots.push({
-                    start_time: currentSlotStartTime.format('HH:mm'),
-                    end_time: slotEndTime.format('HH:mm')
-                });
-                currentSlotStartTime.add(slotInterval, 'minutes');
-            }
-
-            const getSalonSeats = await Branch.findOne({ where: { id: branch_id, status: 1 }, attributes: ['seats'] });
-            const seats = getSalonSeats.seats;
-
-            // Initialize a set to store unique slot timings
-            let availableSlots = new Set();
-            let unavailableSlots = new Set();
-            for (let i = 1; i <= seats; i++) {
-                const seatNo = i;
-                const appointments = await Appointment.findAll({
-                    attributes: ['start_time', 'end_time'],
-                    where: {
-                        branch_id: branch_id,
-                        seat_number: seatNo,
-                        appointment_date: formatedAppointmentDate
-                    }
-                });
-
-                // Check each slot against existing appointments
-                for (const slot of slots) {
-                    let isAvailable = true;
-                    for (const appointment of appointments) {
-                        // Check if slot overlaps with any existing appointment
-                        if (
-                            (moment(slot.start_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
-                            (moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
-                            (moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.end_time, 'HH:mm')))
-                        ) {
-                            isAvailable = false;
-                            break;
-                        }
-                    }
-                    if (isAvailable) {
-                        // Add the slot to the set if it's available
-                        availableSlots.add(JSON.stringify(slot));
-                    } else {
-                        unavailableSlots.add(JSON.stringify(slot));
-                    }
-                }
-            }
-
-            // Convert unique slots back to array format
-            availableSlots = Array.from(availableSlots).map(slot => JSON.parse(slot));
-            unavailableSlots = Array.from(unavailableSlots).map(slot => JSON.parse(slot));
-
-            // Return available and unavailable slots
             return res.json({
                 success: true,
                 message: "Appointment slots generated successfully.",
@@ -194,20 +83,16 @@ module.exports = {
                     unavailable_slots: unavailableSlots
                 }]
             });
+
         } catch (error) {
-            logger.error("Error generating appointment slots:", error);
-            return res.status(500).json({
-                success: false,
-                message: "Internal Server Error",
-                data: []
-            });
+            logger.error("Error Generating Slots: ", error);
+            return res.status(500).json({ success: false, message: "An error occurred.", data: [], error });
         }
     },
+
     async bookAppointment(req, res) {
         const transaction = await sequelize.transaction();
         try {
-
-
             const {
                 user_id,
                 branch_id,
@@ -522,7 +407,7 @@ module.exports = {
                     returning: true
                 },
             );
-            console.log(finalTotalDiscount)
+
             if (finalTotalDiscount > 0) {
                 const insertAppointmentDiscount = await AppointmentDiscount.create(
                     {
@@ -660,7 +545,7 @@ module.exports = {
 
             res.json({ success: true, total_appointments: appointments.length, data: { appointments: formattedAppointments }, message: "OK" });
         } catch (error) {
-            console.error("Error fetching appointments:", error);
+            logger.error("Error fetching appointments:", error);
             res.status(500).json({
                 success: false,
                 message: "Internal Server Error Occurred",
@@ -804,3 +689,162 @@ async function generateReceiptNumber() {
     // Return the unique receipt number as a string
     return receiptNumber.toString();
 }
+
+async function generateSlots(branchStartTime, branchEndTime, serviceDuration, slotInterval, holidayHours, branch_id, formatedAppointmentDate) {
+    let slots = [];
+    let currentSlotStartTime = branchStartTime.clone();
+
+    while (currentSlotStartTime.isBefore(branchEndTime)) {
+        const slotEndTime = currentSlotStartTime.clone().add(serviceDuration, 'minutes');
+        if (slotEndTime.isAfter(branchEndTime)) break;
+
+        let isHoliday = false;
+        for (const holiday of holidayHours) {
+            const holidayStart = moment(holiday.from_date);
+            const holidayEnd = moment(holiday.to_date);
+
+            if (
+                (currentSlotStartTime.isSameOrAfter(holidayStart) && currentSlotStartTime.isBefore(holidayEnd)) ||
+                (slotEndTime.isAfter(holidayStart) && slotEndTime.isSameOrBefore(holidayEnd)) ||
+                (currentSlotStartTime.isBefore(holidayStart) && slotEndTime.isAfter(holidayEnd))
+            ) {
+                isHoliday = true;
+                currentSlotStartTime = holidayEnd.clone().add(15, 'minutes'); // Move to the end of the holiday period and add a 15-minute buffer
+                break;
+            }
+        }
+
+        if (!isHoliday) {
+            slots.push({
+                start_time: currentSlotStartTime.format('HH:mm'),
+                end_time: slotEndTime.format('HH:mm')
+            });
+            currentSlotStartTime.add(slotInterval, 'minutes');
+        } else {
+            if (currentSlotStartTime.isAfter(branchEndTime)) break;
+        }
+    }
+
+    try {
+        const seats = await getSalonSeats(branch_id);
+        let availableSlots = new Set();
+        let unavailableSlots = new Set();
+
+        for (let i = 1; i <= seats; i++) {
+            const seatNo = i;
+            const appointments = await getAppointmentsForSeat(branch_id, seatNo, formatedAppointmentDate);
+
+            for (const slot of slots) {
+                let isAvailable = true;
+                for (const appointment of appointments) {
+                    if (
+                        (moment(slot.start_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
+                        (moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrBefore(moment(appointment.end_time, 'HH:mm'))) ||
+                        (moment(slot.start_time, 'HH:mm').isSameOrBefore(moment(appointment.start_time, 'HH:mm')) && moment(slot.end_time, 'HH:mm').isSameOrAfter(moment(appointment.end_time, 'HH:mm')))
+                    ) {
+                        isAvailable = false;
+                        break;
+                    }
+                }
+                if (isAvailable) {
+                    availableSlots.add(JSON.stringify(slot));
+                } else {
+                    unavailableSlots.add(JSON.stringify(slot));
+                }
+            }
+        }
+
+        availableSlots = Array.from(availableSlots).map(slot => JSON.parse(slot));
+        unavailableSlots = Array.from(unavailableSlots).map(slot => JSON.parse(slot));
+
+        return { availableSlots, unavailableSlots };
+
+    } catch (error) {
+        logger.error("Error in generateSlots function: ", error);
+        throw new Error(`Error generating slots: ${error.message}`);
+    }
+}
+
+async function getSalonSeats(branch_id) {
+    try {
+        const branch = await Branch.findOne({ where: { id: branch_id, status: 1 }, attributes: ['seats'] });
+        if (!branch) {
+            throw new Error("Branch not found or inactive.");
+        }
+        return branch.seats;
+    } catch (error) {
+        logger.error("Error in getSalonSeats function: ", error);
+        throw new Error(`Error fetching salon seats: ${error.message}`);
+    }
+}
+
+async function getAppointmentsForSeat(branch_id, seatNo, appointment_date) {
+    try {
+        return await Appointment.findAll({
+            attributes: ['start_time', 'end_time'],
+            where: {
+                branch_id: branch_id,
+                seat_number: seatNo,
+                appointment_date: appointment_date
+            }
+        });
+    } catch (error) {
+        logger.error("Error in getAppointmentForSeat function: ", error);
+        throw new Error(`Error fetching appointments for seat: ${error.message}`);
+    }
+}
+
+async function getTotalServiceDuration(services, branch_id) {
+    try {
+        let totalDuration = 0;
+
+        for (const element of services) {
+            const service_id = element.service_id;
+            const getServiceDuration = await ServiceOptions.findAll({
+                attributes: ['duration', 'id'],
+                include: [{
+                    model: Services,
+                    attributes: ['branch_id'],
+                    where: {
+                        branch_id: branch_id,
+                        status: 1,
+                    }
+                }],
+                where: {
+                    id: service_id
+                }
+            });
+
+            if (getServiceDuration.length < 1) {
+                return {
+                    success: false,
+                    message: "Couldn't find one or more services.",
+                    data: []
+                };
+            }
+
+            for (const service of getServiceDuration) {
+                const serviceDuration = parseInt(service.duration);
+                if (isNaN(serviceDuration)) {
+                    throw new Error(`Invalid duration for service ID ${service_id}`);
+                }
+                totalDuration += serviceDuration;
+            }
+        }
+
+        return {
+            success: true,
+            data: totalDuration
+        };
+
+    } catch (error) {
+        logger.error("Error in getTotalServiceDuration function: ", error);
+        return {
+            success: false,
+            message: `Error calculating total service duration: ${error.message}`,
+            data: []
+        };
+    }
+}
+
+
