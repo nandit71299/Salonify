@@ -3,6 +3,7 @@
 const path = require('path');
 const bcrypt = require('bcrypt');
 const process = require('process');
+const jwt = require('jsonwebtoken');
 const logger = require(path.join(path.dirname(require.main.filename), 'config', 'Logger.js'));
 const { createTransport } = require(path.join(path.dirname(require.main.filename), 'config', 'Mailer.js'));
 const RegisteredUser = require(path.join(path.dirname(require.main.filename), 'app', 'resource', 'user', 'RegisteredUserResource.js'));
@@ -16,7 +17,6 @@ class UserController {
     async store(request, response) {
         try {
             const emailAndPhoneNumberExistence =  await this.UserService.getUserByEmailAndPhoneNumber(request.body.phone_number, request.body.email);
-
 
             if (emailAndPhoneNumberExistence) {
                 throw new Error('A user is already registered with this email address and phone number.');
@@ -147,9 +147,16 @@ class UserController {
 
             this.UserService.updatePassword(user, {password: hashedPassword});
 
+            const token = jwt.sign(
+                { userId: user.id },
+                process.env.JWT_SECRET,
+                { expiresIn: 60 * 60 * 60 }
+            );
+
             response.status(200).json({
                 success: true,
-                message: 'Password Update Successfully.'
+                message: 'Password Update Successfully.',
+                token
             });
         } catch (error) {
             logger.error('Error occurred during OTP verification:', error);

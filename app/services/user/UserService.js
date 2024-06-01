@@ -1,9 +1,11 @@
 'use strict';
 
 
+const process = require('process');
 const path = require('path');
 const logger = require(path.join(path.dirname(require.main.filename), 'config', 'Logger.js'));
 const { User } = require(path.join(path.dirname(require.main.filename), 'app', 'models', 'User.js'));
+const jwt = require('jsonwebtoken');
 
 class UserService {
     constructor() {
@@ -70,6 +72,12 @@ class UserService {
 
     async updateOtpAndOtpValidity(user, userData) {
         await user.update(userData);
+    }
+
+    async verifyToken(token) {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        return decoded.userId || null;
     }
 }
 

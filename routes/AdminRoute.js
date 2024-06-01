@@ -7,13 +7,17 @@ const userRegistrationData = require('../app/validation/user/UserRegistrationDat
 const userVerifyData = require('../app/validation/user/UserVerifyData');
 const userPasswordData = require('../app/validation/user/UserPasswordData');
 const userUpdateData = require('../app/validation/user/UserUpdateData');
+const RegistrationData = require('../app/validation/saloon/RegistrationData');
 
 const userController = require('../app/http/controller/UserController');
 const loginController = require('../app/http/controller/LoginController');
+const registerController = require('../app/http/controller/RegisterController');
+
 const userService = require('../app/services/user/UserService');
 
 const userControllerObject = new userController(new userService());
 const loginControllerObject = new loginController(new userService());
+const registerControllerObject = new registerController();
 
 router.post('/saloon-login', loginControllerObject.login.bind(loginControllerObject));
 
@@ -23,5 +27,7 @@ router.get('/resend-otp', userControllerObject.resendOtp.bind(userControllerObje
 router.post('/update-password', userPasswordData.validateUserPassword(), userControllerObject.updatePassword.bind(userControllerObject));
 router.post('/update-user', userUpdateData.validateUserUpdate(), userControllerObject.updateUser.bind(userControllerObject));
 router.get('/get-user', (request, response) => { return userControllerObject.getUser(request, response); });
+
+router.post('/register', RegistrationData.validateRegistration(), (request, response) => { return registerControllerObject.register(request, response); });
 
 module.exports = router;

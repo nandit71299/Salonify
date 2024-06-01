@@ -4,7 +4,11 @@ const { Model, DataTypes } = require('sequelize');
 const path = require('path');
 const sequelize = require(path.join(path.dirname(require.main.filename), 'config', 'Database.js'));
 
-class User extends Model {}
+class User extends Model {
+    static associate(models) {
+        this.hasMany(models.Branch, { foreignKey: 'user_id', as: 'branches' });
+    }
+}
 
 User.init({
     name: DataTypes.STRING,

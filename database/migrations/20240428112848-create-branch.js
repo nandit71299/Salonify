@@ -1,56 +1,84 @@
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
-module.exports = {
-    async up(queryInterface, Sequelize) {
+const { DataTypes } = require('sequelize');
+const { getKeyBranchTypes } = require('../../app/enums/branch/Types');
+
+class CreateBranchesTable {
+    /**
+     * Runs the migration to create the Users table.
+     * @param {import('sequelize').QueryInterface} queryInterface
+     */
+    async up(queryInterface) {
         await queryInterface.createTable('Branches', {
             id: {
                 allowNull: false,
                 autoIncrement: true,
                 primaryKey: true,
-                type: Sequelize.INTEGER
+                type: DataTypes.INTEGER
             },
             saloon_id: {
-                type: Sequelize.INTEGER
+                allowNull: false,
+                type: DataTypes.INTEGER,
+                references: {
+                    model: 'Saloons',
+                    key: 'id'
+                },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE'
             },
             user_id: {
-                type: Sequelize.INTEGER
+                allowNull: false,
+                type: DataTypes.INTEGER,
+                references: {
+                    model: 'Users',
+                    key: 'id'
+                },
+                onUpdate: 'CASCADE',
+                onDelete: 'CASCADE'
             },
             name: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING
             },
             city: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING
             },
             address: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING
             },
             type: {
-                type: Sequelize.INTEGER
+                type: DataTypes.ENUM(...getKeyBranchTypes()),
+                allowNull: false
             },
             contact: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING
             },
             latitude: {
-                type: Sequelize.DECIMAL
+                type: DataTypes.DECIMAL,
+                allowNull: true
             },
             longitude: {
-                type: Sequelize.DECIMAL
+                type: DataTypes.DECIMAL,
+                allowNull: true
             },
             seats: {
-                type: Sequelize.INTEGER
+                type: DataTypes.INTEGER
             },
             is_parent: {
-                type: Sequelize.BOOLEAN
+                type: DataTypes.BOOLEAN
+            },
+            image_path: {
+                type: DataTypes.STRING
             },
             createdAt: {
                 allowNull: false,
-                type: Sequelize.DATE
+                type: DataTypes.DATE
             },
             updatedAt: {
                 allowNull: false,
-                type: Sequelize.DATE
+                type: DataTypes.DATE
             }
         });
-    },
-};
+    }
+}
+
+module.exports = new CreateBranchesTable();

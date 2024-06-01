@@ -1,32 +1,41 @@
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
-module.exports = {
-    async up(queryInterface, Sequelize) {
+const { DataTypes } = require('sequelize');
+
+class CreateSaloonsTable {
+    /**
+     * Runs the migration to create the Users table.
+     * @param {import('sequelize').QueryInterface} queryInterface
+     */
+    async up(queryInterface) {
         await queryInterface.createTable('Saloons', {
             id: {
                 allowNull: false,
                 autoIncrement: true,
                 primaryKey: true,
-                type: Sequelize.INTEGER
+                type: DataTypes.INTEGER
             },
             name: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING,
+                unique: true
             },
             description: {
-                type: Sequelize.STRING
+                type: DataTypes.STRING
             },
             status: {
-                type: Sequelize.INTEGER
+                type: DataTypes.INTEGER,
+                default: 1
             },
             createdAt: {
                 allowNull: false,
-                type: Sequelize.DATE
+                type: DataTypes.DATE
             },
             updatedAt: {
                 allowNull: false,
-                type: Sequelize.DATE
+                type: DataTypes.DATE
             }
         });
-    },
-};
+    }
+}
+
+module.exports = new CreateSaloonsTable();

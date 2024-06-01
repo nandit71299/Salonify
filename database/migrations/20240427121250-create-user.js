@@ -16,7 +16,7 @@ class CreateUsersTable {
                 type: DataTypes.INTEGER
             },
             name: {
-                type: DataTypes.STRING
+                type: DataTypes.STRING,
             },
             phone_number: {
                 type: DataTypes.STRING,
