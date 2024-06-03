@@ -1,4 +1,4 @@
-const { User, Saloon, Branch, BranchHour, HolidayHour, Services, ServiceOptions, Appointment, PlatformCoupon, PlatformCouponBranch, AppointmentItems, AppointmentDiscount, Payments, sequelize } = require('../models');
+const { User, Saloon, Branch, BranchHour, HolidayHour, Services, ServiceOptions, Appointment, PlatformCoupon, PlatformCouponBranch, BranchCoupon, AppointmentItems, AppointmentDiscount, Payments, sequelize } = require('../models');
 const moment = require('moment')
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
@@ -19,12 +19,12 @@ module.exports = {
         const weekdayName = moment(formatedAppointmentDate).format('dddd').toLowerCase();
 
         try {
-            const branch = await Branch.findOne({ where: { id: branch_id, status: 1 } });
+            const branch = await Branch.findOne({ where: { id: branch_id, status: enums.is_active.yes } });
             if (!branch) {
                 return res.status(404).json({ success: false, message: "Salon/Branch not found", data: [] });
             }
 
-            const branchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: 1 } });
+            const branchHours = await BranchHour.findOne({ where: { branch_id: branch_id, day: weekdayName, status: enums.is_active.yes } });
             if (!branchHours) {
                 return res.status(409).json({ success: false, message: "Branch is closed on the selected day.", data: [] });
             }
@@ -55,7 +55,7 @@ module.exports = {
             const holidayHours = await HolidayHour.findAll({
                 where: {
                     branch_id: branch_id,
-                    status: 1,
+                    status: enums.is_active.yes,
                     from_date: {
                         [Op.lte]: moment(formatedAppointmentDate).endOf('day').toDate()
                     },
@@ -86,26 +86,28 @@ module.exports = {
 
         } catch (error) {
             logger.error("Error Generating Slots: ", error);
-            return res.status(500).json({ success: false, message: "An error occurred.", data: [], error });
+            return res.status(500).json({ success: false, message: "Internal Server Error.", data: [] });
         }
     },
 
     async bookAppointment(req, res) {
+        const {
+            user_id,
+            branch_id,
+            services,
+            platform_coupon_id = 0,
+            branch_coupon_id = 0,
+            appointment_date,
+        } = req.body;
+        let start_time = moment(req.body.start_time, "HH:mm").format("HH:mm");
+        const formattedAppointmentDate = moment(appointment_date, 'YYYY-MM-DD').format('YYYY-MM-DD');
+        const appointmentWeekday = moment(formattedAppointmentDate).format('dddd').toLowerCase();
         const transaction = await sequelize.transaction();
+
         try {
-            const {
-                user_id,
-                branch_id,
-
-            } = req.body;
-            let start_time = moment(req.body.start_time, "HH:mm").format("HH:mm");
-            let appointment_date = req.body.appointment_date;
-
+            // Ensure the branch exists and is active
             const checkBranchExistence = await Branch.findOne({
-                where: {
-                    id: branch_id,
-                    status: 1,
-                }
+                where: { id: branch_id, status: enums.is_active.yes }, transaction
             });
 
             if (!checkBranchExistence) {
@@ -114,13 +116,10 @@ module.exports = {
                     success: false,
                     message: "Salon/Branch not found",
                     data: [],
-                })
+                });
             }
-            const status = enums.appointmentType.Pending_Payment_Confirmation;
-            const services = req.body.services;
-            const platform_coupon_id = req.body.platform_coupon_id || 0;
 
-            // Check if services belong to the same branch? and services do exists?
+            // Check if services belong to the same branch and services exist
             for (const service of services) {
                 const service_id = service;
                 const query = await ServiceOptions.findAll({
@@ -129,84 +128,29 @@ module.exports = {
                         model: Services,
                         attributes: ['branch_id'],
                         where: { branch_id: branch_id },
-                        required: false // Left join
+                        required: false
                     }],
-                    where: {
-                        id: service_id,
-                        status: status
-                    }
+                    where: { id: service_id, status: enums.is_active.yes }, transaction
                 });
 
                 if (query.length < 1) {
                     await transaction.rollback();
                     return res.status(404).json({
                         success: false,
-                        message: `Appologies. Seems like the branch is no longer accepting appointments for one of your service. Feel free to explore other services from this branch or other near by branches.`,
+                        message: `Apologies. It seems like the branch is no longer accepting appointments for one of your services. Please explore other services from this branch or other nearby branches.`,
                         data: []
-                    })
-                }
-            }
-
-
-            let taxAmount = 0;
-            let discountAmount = 0;
-            let advance_percentage = 30;
-
-            // Handle platform coupon discount
-            if (!isNaN(platform_coupon_id) && parseInt(platform_coupon_id) !== 0) {
-                // check if the branch has actually particiapted in the offer or not
-                const checkBranchCoupon = await PlatformCouponBranch.findOne(
-                    {
-                        where: { branch_id: branch_id, platform_coupon_id: platform_coupon_id, status: 1 }
-                    })
-                if (!checkBranchCoupon) {
-                    await transaction.rollback();
-
-                    return res.status(404).json({
-                        success: false,
-                        message: "Opps!! Looks like the coupon is not valid or is expired...",
-                        data: [],
-                    })
-                }
-
-                // check coupon exists or not. if yes assign respective values. if not return error
-                const checkCoupon = await PlatformCoupon.findOne({
-                    attributes: ['amount', 'advance_percentage'],
-                    where: { id: platform_coupon_id, status: 1 }
-                });
-
-                if (checkCoupon) {
-                    discountAmount = checkCoupon.amount;
-                    advance_percentage = checkCoupon.advance_percentage;
-                } else {
-                    await transaction.rollback();
-
-                    return res.status(400).json({
-                        success: false,
-                        message: "Opps!! Looks like the coupon is not valid or is expired.",
-                        data: [],
                     });
                 }
             }
 
-            // Determine the weekday name of the appointment date
-            const formattedAppointmentDate = moment(appointment_date, 'YYYY-MM-DD').format('YYYY-MM-DD');
-            const appointmentWeekday = moment(formattedAppointmentDate).format('dddd').toLowerCase();
-
-            // Query branch hours for the appointment weekday , and 
-            // Check if the salon is closed on the selected appointment day
+            // Check branch hours
             const branchHoursQuery = await BranchHour.findOne({
                 attributes: ['start_time', 'end_time', 'status'],
-                where: {
-                    branch_id: branch_id,
-                    day: appointmentWeekday,
-                    status: 1
-                }
+                where: { branch_id: branch_id, day: appointmentWeekday, status: enums.is_active.yes }, transaction
             });
 
             if (!branchHoursQuery) {
                 await transaction.rollback();
-
                 return res.status(409).json({
                     success: false,
                     message: "Salon is not open on the selected appointment day.",
@@ -214,38 +158,42 @@ module.exports = {
                 });
             }
 
-            // check if salon is on holiday on the selected day..
-            const appointmentDateTime = moment(`${appointment_date} ${start_time}`, 'YYYY/MM/DD HH:mm');
-            const checkHolidayQuery = await HolidayHour.findAll({
-                attributes: ['id'],
-                where: {
-                    branch_id: branch_id,
-                    from_date: { [Op.lte]: appointmentDateTime },
-                    to_date: { [Op.gte]: appointmentDateTime },
-                    status: 1
-                }
-            });
-
-            if (checkHolidayQuery.length > 0) {
-                await transaction.rollback();
-
-                return res.status(409).json({ success: false, message: "The salon is closed for holiday on the selected appointment date/time." });
-            }
-
-            // Extract start and end times from the query result
             const storeStartTime = branchHoursQuery.start_time;
             const storeEndTime = branchHoursQuery.end_time;
 
-            // Convert start and end times to moment objects for comparison
             const momentStoreStartTime = moment(storeStartTime, 'HH:mm');
             const momentStoreEndTime = moment(storeEndTime, 'HH:mm');
 
-            // Convert appointment start time to a moment object
+            let endTime = moment(start_time, 'HH:mm');
+            for (const serviceId of services) {
+                const serviceOptionQuery = await ServiceOptions.findOne({
+                    where: { id: serviceId, status: enums.is_active.yes },
+                    attributes: ['id', 'duration'],
+                    include: [{
+                        model: Services,
+                        attributes: ['branch_id'],
+                        where: { branch_id: branch_id }
+                    }], transaction
+                });
+
+                if (!serviceOptionQuery) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: "Apologies, it seems one of your selected services is currently unavailable. Please explore other services at this branch or similar ones at nearby branches. Thank you for your understanding!",
+                        data: []
+                    });
+                }
+
+                const serviceDuration = serviceOptionQuery.duration;
+                endTime.add(serviceDuration, 'minutes');
+            }
+
+            endTime = moment(endTime, "HH:mm").subtract(1, "minutes").format('HH:mm');
             const momentAppointmentStartTime = moment(start_time, 'HH:mm');
+            const momentAppointmentEndTime = moment(endTime, 'HH:mm');
 
-            // Check if the appointment start time is outside of store hours
-            if (momentAppointmentStartTime.isBefore(momentStoreStartTime) || momentAppointmentStartTime.isAfter(momentStoreEndTime)) {
-
+            if (momentAppointmentStartTime.isBefore(momentStoreStartTime) || momentAppointmentEndTime.isAfter(momentStoreEndTime)) {
                 await transaction.rollback();
                 return res.status(409).json({
                     success: false,
@@ -254,80 +202,56 @@ module.exports = {
                 });
             }
 
-            // Initialize end time with the start time
-            let endTime = moment(start_time, 'HH:mm');
+            // Check holiday hours
+            const appointmentDateTime = moment(`${appointment_date} ${start_time}`, 'YYYY/MM/DD HH:mm');
+            const checkHolidayQuery = await HolidayHour.findAll({
+                attributes: ['id', 'from_date', 'to_date'],
+                where: {
+                    branch_id: branch_id,
+                    status: enums.is_active.yes,
+                    [Op.or]: [
+                        { from_date: { [Op.lte]: appointmentDateTime }, to_date: { [Op.gte]: appointmentDateTime } },
+                        { from_date: { [Op.lte]: moment(`${appointment_date} ${endTime}`, 'YYYY/MM/DD HH:mm') }, to_date: { [Op.gte]: moment(`${appointment_date} ${endTime}`, 'YYYY/MM/DD HH:mm') } },
+                        {
+                            [Op.and]: [
+                                { from_date: { [Op.lte]: appointmentDateTime } },
+                                { to_date: { [Op.gte]: moment(`${appointment_date} ${endTime}`, 'YYYY/MM/DD HH:mm') } }
+                            ]
+                        }
+                    ]
+                }, transaction
+            });
 
-            // Loop through each service and add its duration to the end time
-            for (const serviceId of services) {
-                const serviceOptionQuery = await ServiceOptions.findOne(
-                    {
-                        where: { id: serviceId, status: 1 }, attributes: ['id', 'duration'],
-                        include: [
-                            {
-                                model: Services,
-                                attributes: ['branch_id'],
-                                where: { branch_id: branch_id }
-                            }
-                        ]
-                    }
-                );
-
-                if (!serviceOptionQuery) {
-                    await transaction.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: "Apologies, it seems one of your selected service is currently unavailable. Please feel free to explore other services at this branch or similar ones at nearby branches. Thank you for your understanding!",
-                        data: []
-                    })
-                }
-
-                const serviceDuration = serviceOptionQuery.duration;
-                // Add service duration to the end time
-                endTime.add(serviceDuration, 'minutes');
+            if (checkHolidayQuery.length > 0) {
+                await transaction.rollback();
+                return res.status(409).json({ success: false, message: "The salon is closed for holiday during the selected appointment date/time." });
             }
-            // Format the end time back to HH:mm format
-            endTime = moment(endTime, "HH:mm").subtract(1, "minutes").format('HH:mm');
 
-
-            // Check available seats
-            const checkSeatsQuery = await Branch.findOne({ attributes: ['seats'], where: { id: branch_id, status: 1 } });
+            const checkSeatsQuery = await Branch.findOne({ attributes: ['seats'], where: { id: branch_id, status: enums.is_active.yes }, transaction });
             if (!checkSeatsQuery) {
                 await transaction.rollback();
-
                 return res.status(404).json({
                     success: false,
-                    message: "Appologies, it seems the branch is not accepting the appointments right now.",
+                    message: "Apologies, it seems the branch is not accepting appointments right now.",
                     data: []
-                })
+                });
             }
             const totalSeats = checkSeatsQuery.seats;
 
             let availableSeat = 0;
             for (let seatNumber = 1; seatNumber <= totalSeats; seatNumber++) {
-                const checkAppointmentsQuery = await Appointment.findAll(
-                    {
-                        where: {
-                            branch_id: branch_id,
-                            seat_number: seatNumber,
-                            appointment_date: formattedAppointmentDate,
-                            [Op.or]: [
-                                {
-                                    [Op.and]: [
-                                        { start_time: { [Op.lte]: start_time } },
-                                        { end_time: { [Op.gte]: start_time } }
-                                    ]
-                                },
-                                {
-                                    [Op.and]: [
-                                        { start_time: { [Op.lte]: endTime } },
-                                        { end_time: { [Op.gte]: endTime } }
-                                    ]
-                                }
-                            ]
-
-                        },
-                        attributes: ['id']
-                    });
+                const checkAppointmentsQuery = await Appointment.findAll({
+                    where: {
+                        branch_id: branch_id,
+                        seat_number: seatNumber,
+                        appointment_date: formattedAppointmentDate,
+                        [Op.or]: [
+                            { [Op.and]: [{ start_time: { [Op.lte]: start_time } }, { end_time: { [Op.gte]: start_time } }] },
+                            { [Op.and]: [{ start_time: { [Op.lte]: endTime } }, { end_time: { [Op.gte]: endTime } }] }
+                        ]
+                    },
+                    attributes: ['id']
+                });
                 if (checkAppointmentsQuery.length === 0) {
                     availableSeat = seatNumber;
                     break;
@@ -336,15 +260,80 @@ module.exports = {
 
             if (availableSeat === 0) {
                 await transaction.rollback();
-
                 return res.status(409).json({
                     success: false,
                     message: "No available seats for the given time slot.",
-
                 });
             }
 
-            // Continue with the rest of the code...
+            if (!isNaN(platform_coupon_id) && parseInt(platform_coupon_id) !== 0 && !isNaN(branch_coupon_id) && parseInt(branch_coupon_id) !== 0) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: "Both platform and branch coupons cannot be applied at the same time.",
+                    data: []
+                });
+            }
+
+            let discount_amount = 0;
+            let max_advance_amount = 0;
+            let advance_percentage = 0;
+            let minimum_subtotal = 0;
+
+            // Handle platform coupon discount
+            if (!isNaN(platform_coupon_id) && parseInt(platform_coupon_id) !== 0) {
+                const checkBranchCoupon = await PlatformCouponBranch.findOne({
+                    where: { branch_id: branch_id, platform_coupon_id: platform_coupon_id, status: enums.is_active.yes }, transaction
+                });
+                if (!checkBranchCoupon) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: "Oops! It looks like the coupon is not valid or has expired.",
+                        data: [],
+                    });
+                }
+
+                const checkCoupon = await PlatformCoupon.findOne({
+                    attributes: ['amount', 'advance_percentage', 'max_advance_payment'],
+                    where: { id: platform_coupon_id, status: enums.is_active.yes }, transaction
+                });
+
+                discount_amount = checkCoupon.amount;
+                advance_percentage = checkCoupon.advance_percentage;
+                max_advance_amount = checkCoupon.max_advance_payment;
+            }
+
+            if (!isNaN(branch_coupon_id) && parseInt(branch_coupon_id) !== 0) {
+                const couponData = await BranchCoupon.findOne({
+                    where: { branch_id: branch_id, id: branch_coupon_id, status: enums.is_active.yes },
+                    attributes: ['id', 'max_advance_amount', 'advance_percentage', 'minimum_subtotal', 'start_date', 'end_date', 'amount'], transaction
+                });
+
+                if (!couponData) {
+                    await transaction.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: "Oops! It looks like the coupon is not valid or has expired.",
+                        data: [],
+                    });
+                }
+                if (!moment(formattedAppointmentDate).isBetween(moment(couponData.start_date), moment(couponData.end_date), null, '[]')) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: "Appointment date is not within the valid period for this coupon.",
+                        data: []
+                    });
+                }
+
+                discount_amount = couponData.amount;
+                max_advance_amount = couponData.max_advance_amount;
+                advance_percentage = couponData.advance_percentage;
+                minimum_subtotal = couponData.minimum_subtotal;
+            }
+
+
             let finalTotalDiscount = 0;
             let finalTotalTax = 0;
             let finalSubtotal = 0;
@@ -369,30 +358,28 @@ module.exports = {
                     end_time: endTime,
                     seat_number: availableSeat
                 },
-                { returning: true },
-            )
+                { returning: true, transaction },
+            );
             const appointment_id = createAppointment.id;
-
-            // Insert service options
+            if (!appointment_id) {
+                await transaction.rollback();
+                throw new Error("Error Creating Appointment")
+            }
             for (const service of services) {
-
                 const getServicePrice = await ServiceOptions.findOne({ attributes: ['price'], where: { id: service } });
                 const servicePrice = parseFloat(getServicePrice.price);
-                const total_item_discount = discountAmount !== 0 ? parseFloat(servicePrice * (discountAmount / 100)) : 0;
-                const total_tax = taxAmount !== 0 ? parseFloat(servicePrice * (taxAmount / 100)) : 0;
+                const total_item_discount = discount_amount !== 0 ? parseFloat(servicePrice * (discount_amount / 100)) : 0;
+                const total_tax = typeof taxAmount !== 'undefined' && taxAmount !== 0 ? parseFloat(servicePrice * (taxAmount / 100)) : 0;
                 const total_price_paid = 0;
 
-                await AppointmentItems.create(
-                    {
-                        appointment_id: appointment_id, service_option_id: service, service_price: servicePrice, total_item_discount: total_item_discount, total_tax: total_tax, total_price_paid
-                    }
-                )
+                await AppointmentItems.create({
+                    appointment_id: appointment_id, service_option_id: service, service_price: servicePrice, total_item_discount, total_tax, total_price_paid
+                }, { transaction });
 
                 finalSubtotal += servicePrice;
                 finalTotalDiscount += total_item_discount;
                 finalTotalTax += total_tax;
             }
-
 
             const finalNetAmount = finalSubtotal - finalTotalDiscount + finalTotalTax;
             const [affectedRows, [updateAppointment]] = await Appointment.update(
@@ -404,32 +391,52 @@ module.exports = {
                 },
                 {
                     where: { id: appointment_id },
-                    returning: true
+                    returning: true,
+                    transaction
                 },
             );
 
-            if (finalTotalDiscount > 0) {
-                const insertAppointmentDiscount = await AppointmentDiscount.create(
-                    {
-                        appointment_id: appointment_id,
-                        coupon_type: enums.coupon_type.platform_coupon,
-                        coupon_id: platform_coupon_id,
-                        amount: finalTotalDiscount
-                    }
-                )
+            if (affectedRows === 0) {
+                throw new Error("Error Updating Appointment");
             }
-            let advance_amount = (finalNetAmount * advance_percentage) / 100;
+
+            if (finalTotalDiscount > 0) {
+                await AppointmentDiscount.create({
+                    appointment_id: appointment_id,
+                    coupon_type: enums.coupon_type.platform_coupon,
+                    coupon_id: platform_coupon_id,
+                    amount: finalTotalDiscount
+                }, { transaction });
+            }
+
+            let advance_amount = 0;
+            if (branch_coupon_id) {
+                if (finalSubtotal < minimum_subtotal) {
+                    await transaction.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: `Appointment subtotal does not meet the minimum required subtotal for this coupon.`,
+                        data: []
+                    });
+                }
+
+                advance_amount = finalNetAmount * advance_percentage / 100;
+                advance_amount = advance_amount > max_advance_amount ? max_advance_amount : advance_amount;
+            }
+            if (platform_coupon_id) {
+                advance_amount = finalNetAmount * advance_percentage / 100;
+                advance_amount = advance_amount > max_advance_amount ? max_advance_amount : advance_amount;
+            }
 
             res.json({
                 success: true,
                 message: "Appointment booked successfully.",
-                data:
-                    [{
-                        appointment: updateAppointment.dataValues,
-                        advance_amount: parseFloat(`${advance_amount}`).toFixed(2)
-                    }]
+                data: [{
+                    appointment: updateAppointment.dataValues,
+                    advance_amount: parseFloat(advance_amount).toFixed(2)
+                }]
+            });
 
-            })
             await transaction.commit();
         } catch (error) {
             await transaction.rollback();
@@ -440,7 +447,6 @@ module.exports = {
                 data: []
             });
         }
-
     },
 
     async getAllAppointments(req, res) {
@@ -727,6 +733,9 @@ async function generateSlots(branchStartTime, branchEndTime, serviceDuration, sl
 
     try {
         const seats = await getSalonSeats(branch_id);
+        if (seats === null || seats === 0) {
+            throw new Error("Could Not Find Salon Seats.")
+        }
         let availableSlots = new Set();
         let unavailableSlots = new Set();
 
@@ -761,13 +770,13 @@ async function generateSlots(branchStartTime, branchEndTime, serviceDuration, sl
 
     } catch (error) {
         logger.error("Error in generateSlots function: ", error);
-        throw new Error(`Error generating slots: ${error.message}`);
+        throw new Error(`Error generating slots: ${error}`);
     }
 }
 
 async function getSalonSeats(branch_id) {
     try {
-        const branch = await Branch.findOne({ where: { id: branch_id, status: 1 }, attributes: ['seats'] });
+        const branch = await Branch.findOne({ where: { id: branch_id, status: enums.is_active.yes }, attributes: ['seats'] });
         if (!branch) {
             throw new Error("Branch not found or inactive.");
         }
@@ -807,7 +816,7 @@ async function getTotalServiceDuration(services, branch_id) {
                     attributes: ['branch_id'],
                     where: {
                         branch_id: branch_id,
-                        status: 1,
+                        status: enums.is_active.yes,
                     }
                 }],
                 where: {
@@ -825,7 +834,7 @@ async function getTotalServiceDuration(services, branch_id) {
 
             for (const service of getServiceDuration) {
                 const serviceDuration = parseInt(service.duration);
-                if (isNaN(serviceDuration)) {
+                if (isNaN(serviceDuration) || typeof (serviceDuration) === undefined) {
                     throw new Error(`Invalid duration for service ID ${service_id}`);
                 }
                 totalDuration += serviceDuration;
