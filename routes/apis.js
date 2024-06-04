@@ -16,6 +16,7 @@ const appointmentData = require('../validation/appointment');
 const offerData = require('../validation/branchOffers');
 const platform_coupon = require('../validation/platformCoupon');
 const analytics = require('../validation/analytics');
+const cart = require('../validation/cart')
 
 //Controllers
 const LoginRegisterController = require('../controller/loginregister')
@@ -27,6 +28,7 @@ const ServiceOptionController = require('../controller/serviceOptionController')
 const OfferController = require('../controller/branchOfferController')
 const PlatformCouponController = require('../controller/platformCouponController')
 const AnalyticsController = require('../controller/analyticsController')
+const CartController = require('../controller/cartController')
 
 // Login & Registration
 router.post('/registersalon', upload.single('image'), loginregister.validateSalonRegistration, LoginRegisterController.registerSalon);
@@ -111,13 +113,15 @@ router.get('/top-paying-customers-with-platform-offer', platform_coupon.validate
 
 // Customer App
 router.get('/branchesincity', branch.validateGetNearbySalons, BranchController.getNearbySalons);
-// router.get('/branchesbycategory');
-// router.get('/cartcount');
+router.get('/branchesbycategory', branch.validateGetBranchesByCategory, BranchController.getBranchesByCategory);
+router.post('/add-to-cart', cart.validateAddToCart, CartController.addToCart);
+router.delete('/remove-from-cart', cart.validateRemoveFromCart, CartController.removeFromCart)
+router.delete('/cart-delete-all', cart.validateCartDeleteAll, CartController.cartDeleteAll)
+router.get('/cartcount', cart.validateGetCartCount, CartController.getCartCount);
 // router.post('/ratesalon');
 // router.post('/searchserviceorsalon');
 // router.get('/branchdetails');
 // router.get('/branchservices');
-// router.post('/add-to-cart');
 // router.delete('/remove-from-cart');
 // router.delete('/cartdeleteall');
 // ADD RESERVE A SEAT PAGE ROUTE WHICH GETS ALL SERVICES USER ADDED IN THE CART, GET ITS PRICE FROM SERVICE_OPTIONS AND SEND OTHER INFORMATION

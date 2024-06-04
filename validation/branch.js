@@ -236,3 +236,17 @@ exports.validateGetNearbySalons = [
         next();
     }
 ]
+
+exports.validateGetBranchesByCategory = [
+    check("category_id").isInt().withMessage("Category ID must be an integer"),
+    check("city").isString().notEmpty().withMessage("City must be a non-empty string"),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+
+        next();
+    }
+]

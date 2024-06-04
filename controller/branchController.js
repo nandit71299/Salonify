@@ -1,5 +1,5 @@
 const logger = require('../config/logger');
-const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch } = require('../models');
+const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch, Services } = require('../models');
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const fs = require('fs');
@@ -491,6 +491,38 @@ module.exports = {
             // Handle any errors that occur during the query or filtering process
             logger.error('Error fetching nearby salons:', error);
             res.status(500).json({ success: false, message: 'Internal server error', data: [] });
+        }
+    },
+
+    async getBranchesByCategory(req, res) {
+        try {
+            const { category_id, city } = req.query;
+
+            // Assuming you have defined the models for 'services' and 'branches' using Sequelize
+            const services = await Services.findAll({
+                where: { category_id: category_id, status: enums.is_active.yes }
+            });
+
+            // Retrieve branch_ids from services
+            const branchIds = services.map(service => service.branch_id);
+
+            // Retrieve branches based on branchIds and city
+            const branches = await Branch.findAll({
+                where: {
+                    id: { [Op.in]: branchIds },
+                    city: city, // Filter branches by city
+                    status: enums.is_active.yes
+                }
+            });
+
+            if (branches.length === 0) {
+                return res.status(404).json({ success: false, data: [], message: "No sign of salons? Maybe they're on vacation, or maybe they're just camera shy! Ask your favorite salon to register with Salonify." });
+            }
+
+            res.status(200).json({ success: true, data: branches, message: "OK" });
+        } catch (error) {
+            logger.error('Error fetching active branches:', error);
+            res.status(500).json({ success: false, data: [], message: 'Internal Server Error.' });
         }
     }
 
