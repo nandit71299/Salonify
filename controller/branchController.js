@@ -4,6 +4,7 @@ const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const fs = require('fs');
 const moment = require('moment');
+const geolib = require('geolib')
 moment.tz("Asia/Kolkata");
 
 
@@ -200,7 +201,7 @@ module.exports = {
                 }
 
                 const [affectedRows, [updateHoliday]] = await HolidayHour.update(
-                    { status: 0 },
+                    { status: enums.is_active.no },
                     {
                         where: { id: id },
                         returning: true
@@ -245,7 +246,7 @@ module.exports = {
         }
         await sequelize.transaction(async (transaction) => {
             try {
-                await HolidayHour.update({ from_date: from_date, to_date: to_date }, { where: { branch_id: branch_id, id: id }, returning: true }, { transaction })
+                await HolidayHour.update({ from_date: moment(from_date).format('YYYY-MM-DD HH:mm'), to_date: moment(to_date).format('YYYY-MM-DD HH:mm') }, { where: { branch_id: branch_id, id: id }, returning: true }, { transaction })
                 res.status(201).json({
                     success: true,
                     message: "Holiday updated succesfully",
@@ -439,6 +440,58 @@ module.exports = {
             });
         }
 
+    },
+
+    async getNearbySalons(req, res) {
+        const { city, maxDistance, latitude, longitude } = req.query;
+        try {
+            // Step 1: Get all salons in the specified city using Sequelize
+            const filter = [];
+
+            let filterOption = req.query.filterOption;
+            if (filterOption) { filterOption = filterOption.toLowerCase(); }
+            if (filterOption) {
+                if (filterOption == "unisex") {
+                    filter.push(enums.salon_type.unisex);
+                }
+                if (filterOption == "womens") {
+                    filter.push(enums.salon_type.womens);
+                }
+                if (filterOption == "mens") {
+                    filter.push(enums.salon_type.mens);
+                }
+            }
+
+            const salons = await Branch.findAll({
+                where: {
+                    city: city,
+                    type: filter,
+                }
+            });
+            if (salons.length < 1) {
+                return res.status(404).json({
+                    success: false,
+                    message: "No sign of salons? Maybe they're on vacation, or maybe they're just camera shy! Ask your favorite salon to register with Salonify.",
+                    data: []
+                })
+            }
+            // Step 2: Filter salons based on distance using geolib
+            const nearbySalons = salons.filter(salon => {
+                const distance = geolib.getDistance(
+                    { latitude, longitude },
+                    { latitude: salon.latitude, longitude: salon.longitude }
+                );
+                console.log(distance)
+                return distance <= maxDistance;
+            });
+
+            // Step 3: Return the filtered list of salons
+            res.json({ success: true, data: nearbySalons, message: "OK" });
+        } catch (error) {
+            // Handle any errors that occur during the query or filtering process
+            logger.error('Error fetching nearby salons:', error);
+            res.status(500).json({ success: false, message: 'Internal server error', data: [] });
+        }
     }
 
 }

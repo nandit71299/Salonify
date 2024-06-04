@@ -211,3 +211,28 @@ exports.validateGetDashboard = [
     }
 
 ]
+
+exports.validateGetNearbySalons = [
+    check('latitude')
+        .isFloat({ min: -90, max: 90 })
+        .withMessage('Latitude must be a number between -90 and 90'),
+    check('longitude')
+        .isFloat({ min: -180, max: 180 })
+        .withMessage('Longitude must be a number between -180 and 180'),
+    check('city')
+        .isString()
+        .notEmpty()
+        .withMessage('City must be a non-empty string'),
+    check('maxDistance')
+        .isInt({ min: 0 })
+        .withMessage('Max distance must be a non-negative integer'),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+
+        next();
+    }
+]

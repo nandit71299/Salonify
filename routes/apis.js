@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const upload = multer();
+const axios = require('axios');
 
 //Authentication Token Middleware
 const authMiddleware = require("../config/authMiddleware.js");
@@ -56,16 +57,16 @@ router.get('/appointmentdetails', appointmentData.validateGetAppoitmentDetails, 
 router.post('/book-appointment', appointmentData.validateApointmentBooking, AppointmentController.bookAppointment);
 
 // Holidays
-router.post('/holidays', branch.validateInsertBranchHoliday, BranchController.createHoliday);
-router.delete('/holidays', branch.validateDeleteBranchHoliday, BranchController.deleteHoliday);
-router.put('/holidays', branch.validateUpdateBranchHoliday, BranchController.updateHoliday);
+router.post('/holiday', branch.validateInsertBranchHoliday, BranchController.createHoliday);
+router.delete('/holiday', branch.validateDeleteBranchHoliday, BranchController.deleteHoliday);
+router.put('/holiday', branch.validateUpdateBranchHoliday, BranchController.updateHoliday);
 router.get('/holidays', branch.validateGetBranchHoliday, BranchController.getHoliday);
 
 // Services
 router.post('/service', service.validateCreateService, ServiceController.createService);
 router.get('/services', service.validateGetAllServices, ServiceController.getAllService);
 router.delete('/services', service.validateDeleteServices, ServiceController.deleteServices);
-router.put('/services', service.validateUpdateService, ServiceController.updateService);
+router.put('/service', service.validateUpdateService, ServiceController.updateService);
 router.get('/service', service.validateGetService, ServiceController.getService);
 router.delete('/serviceoption', serviceOption.validateDeleteServiceOption, ServiceOptionController.deleteServiceOption)
 
@@ -95,6 +96,44 @@ router.get('/platform-offer-insights', platform_coupon.validateGetPlatformOfferI
 router.get('/sales-over-time-with-platform-offer', platform_coupon.validateGetSalesOverTimeWithPlatformOffer, PlatformCouponController.getSalesOverTimeWithPlatformOffer)
 router.get('/sales-by-service-with-platform-offer', platform_coupon.validateGetSalesByServiceWithPlatformOffer, PlatformCouponController.getSalesByServiceWithPlatformOffer)
 router.get('/top-paying-customers-with-platform-offer', platform_coupon.validateGetTopPayingCustomersWithPlatformOffer, PlatformCouponController.getTopPayingCustomersWithPlatformOffer)
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Customer App
+router.get('/branchesincity', branch.validateGetNearbySalons, BranchController.getNearbySalons);
+// router.get('/branchesbycategory');
+// router.get('/cartcount');
+// router.post('/ratesalon');
+// router.post('/searchserviceorsalon');
+// router.get('/branchdetails');
+// router.get('/branchservices');
+// router.post('/add-to-cart');
+// router.delete('/remove-from-cart');
+// router.delete('/cartdeleteall');
+// ADD RESERVE A SEAT PAGE ROUTE WHICH GETS ALL SERVICES USER ADDED IN THE CART, GET ITS PRICE FROM SERVICE_OPTIONS AND SEND OTHER INFORMATION
+// router.get('/bookingshistory');
+// router.get('/servicewishlist');
+// router.put('/branchwishlist');
+// router.put('/branchwishlist');
+// router.post("/initiateadvancepayment");
+// router.post("/initiatepostservicepayment");
+// router.post("/appointmentdetails");
+// router.post("/cancellationsummary");
+// router.put("/rescheduleappointment");
+// router.get("/wishlisteditems");
+// router.get("/customerprofile");
+// router.get("/getallpayments");
+
 
 
 module.exports = router;
