@@ -1,4 +1,4 @@
-const { User, Saloon, Branch, BranchHour, HolidayHour, Services, ServiceOptions, Appointment, PlatformCoupon, PlatformCouponBranch, BranchCoupon, AppointmentItems, AppointmentDiscount, Payments, sequelize } = require('../models');
+const { User, Cart, CartItems, Saloon, Branch, BranchHour, HolidayHour, Services, ServiceOptions, Appointment, PlatformCoupon, PlatformCouponBranch, BranchCoupon, AppointmentItems, CancellationReason, AppointmentDiscount, Payments, sequelize } = require('../models');
 const moment = require('moment')
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
@@ -570,6 +570,14 @@ module.exports = {
                 where: { id: appointment_id, branch_id: branch_id }
             });
             if (!appointment) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Appointment not found.",
+                    data: []
+                })
+            }
+
+            if (!appointment) {
                 // If appointment not found, return 404 response
                 return res.status(404).json({
                     success: false,
@@ -580,7 +588,6 @@ module.exports = {
 
             // Get user details associated with the appointment
             const user = await User.findByPk(appointment.user_id);
-
             // Get service options associated with the appointment
             const appointmentItems = await AppointmentItems.findAll({
                 where: { appointment_id: appointment.id },
@@ -676,8 +683,546 @@ module.exports = {
                 data: []
             });
         }
+    },
+
+    async getBookingHistory(req, res) {
+        const user_id = req.query.user_id;
+
+        try {
+            const data = { upcoming: [], today: [], past: [] };
+
+            const appointments = await Appointment.findAll({
+                where: { user_id },
+                include: [
+                    {
+                        model: Branch,
+                        attributes: ['name', 'address']
+                    },
+                    {
+                        model: AppointmentItems,
+                        include: [
+                            {
+                                model: ServiceOptions,
+                                attributes: ['id', 'name']
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            for (const appointment of appointments) {
+                const {
+                    id, receipt_number, branch_id, subtotal, total_discount, total_tax, net_amount,
+                    total_amount_paid, end_time, seat_number, created_at, is_rescheduled, appointment_date,
+                    start_time, status
+                } = appointment;
+
+                // Formatting date and time
+                const formattedAppointmentDate = moment(appointment_date).format("YYYY-MM-DD");
+                const formattedStartTime = moment(start_time, "HH:mm").format("HH:mm");
+
+                const branchDetails = {
+                    name: appointment.Branch.name,
+                    address: appointment.Branch.address
+                };
+
+                const services_options = appointment.AppointmentItems.map(item => ({
+                    id: item.ServiceOption.id,
+                    name: item.ServiceOption.name
+                }));
+
+                // Calculate if appointment is cancellable or reschedulable
+                const threeHoursBeforeAppointment = moment(`${formattedAppointmentDate} ${formattedStartTime}`, 'YYYY-MM-DD HH:mm').subtract(3, 'hours');
+                const isCancellable = (
+                    (status !== enums.appointmentType.Pending_Payment_Confirmation) &&
+                    (status === enums.appointmentType.Confirmed || status === enums.appointmentType.NoShow) &&
+                    status !== enums.appointmentType.Closed &&
+                    status !== enums.appointmentType.Cancelled
+                ) || (status === enums.appointmentType.Confirmed && moment().isBefore(threeHoursBeforeAppointment) && is_rescheduled !== 1);
+
+                const isRescheduleable = (
+                    (status !== enums.appointmentType.Pending_Payment_Confirmation) &&
+                    (status === enums.appointmentType.Confirmed && moment().isBefore(threeHoursBeforeAppointment) && is_rescheduled !== 1) &&
+                    status !== enums.appointmentType.Closed &&
+                    status !== enums.appointmentType.Cancelled &&
+                    status !== enums.appointmentType.NoShow
+                );
+
+                // Assign appointment to appropriate category
+                const currentDate = moment().format("YYYY-MM-DD");
+                if (formattedAppointmentDate > currentDate) {
+                    data.upcoming.push(getAppointmentObject(appointment, branchDetails, services_options, isRescheduleable, isCancellable));
+                } else if (formattedAppointmentDate === currentDate) {
+                    data.today.push(getAppointmentObject(appointment, branchDetails, services_options, isRescheduleable, isCancellable));
+                } else {
+                    data.past.push(getAppointmentObject(appointment, branchDetails, services_options, isRescheduleable, isCancellable));
+                }
+
+                function getAppointmentObject(appointment, branchDetails, services_options, isRescheduleable, isCancellable) {
+                    return {
+                        user_id: appointment.user_id,
+                        id: appointment.id,
+                        receipt_number: appointment.receipt_number,
+                        branch_id: appointment.branch_id,
+                        appointment_date: appointment.appointment_date,
+                        subtotal: appointment.subtotal,
+                        total_discount: appointment.total_discount,
+                        total_tax: appointment.total_tax,
+                        net_amount: appointment.net_amount,
+                        total_amount_paid: appointment.total_amount_paid,
+                        start_time: appointment.start_time,
+                        end_time: appointment.end_time,
+                        status: appointment.status,
+                        seat_number: appointment.seat_number,
+                        isRescheduleable: isRescheduleable,
+                        isCancellable: isCancellable,
+                        created_at: appointment.created_at,
+                        branch_details: branchDetails,
+                        services_options: services_options
+                    };
+                }
+
+            }
+
+            res.json({ success: true, data, message: "OK" });
+        } catch (error) {
+            logger.error('Error fetching appointment history:', error);
+            res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
+        }
+    },
+
+    async getCustomerAppointmentDetails(req, res) {
+        try {
+            const { appointment_id, branch_id, user_id } = req.query;
+
+            // Fetch appointment details
+            const appointment = await Appointment.findOne({
+                where: {
+                    id: appointment_id,
+                    branch_id: branch_id,
+                    user_id: user_id
+                }
+            });
+
+            if (!appointment) {
+                return res.status(404).json({ success: false, message: "Appointment not found", data: [] });
+            }
+
+            // Fetch Branch Details
+            const branchDetails = await Branch.findOne({
+                where: { id: appointment.branch_id }
+            });
+
+            // Fetch payment details
+            const paymentDetails = await Payments.findAll({
+                where: { appointment_id: appointment_id }
+            });
+
+            const data = {
+                appointment_details: appointment,
+                branch_details: branchDetails,
+                service_details: [],
+                payment_details: {
+                    successfull_payments: [],
+                    failed_payments: [],
+                    refunded_payments: [],
+                    unknown_payments: []
+                }
+            };
+
+            // Fetch appointment services
+            const appointmentServices = await AppointmentItems.findAll({
+                where: { appointment_id: appointment.id }
+            });
+
+            for (const item of appointmentServices) {
+                const serviceDetails = await ServiceOptions.findOne({
+                    where: { id: item.service_option_id }
+                });
+                if (serviceDetails) {
+                    data.service_details.push({ serviceName: serviceDetails.name, servicePrice: item.service_price });
+                }
+            }
+
+            // Categorize payment details
+            paymentDetails.forEach(payment => {
+                switch (payment.status) {
+                    case enums.payment_status.succesfull:
+                        data.payment_details.successfull_payments.push(payment);
+                        break;
+                    case enums.payment_status.failed:
+                        data.payment_details.failed_payments.push(payment);
+                        break;
+                    case enums.payment_status.refunded:
+                        data.payment_details.refunded_payments.push(payment);
+                        break;
+                    default:
+                        data.payment_details.unknown_payments.push(payment);
+                        break;
+                }
+            });
+
+            res.json({ success: true, data: data, message: "OK" });
+        } catch (error) {
+            logger.error("Error fetching appointment details:", error);
+            res.status(500).json({ success: false, message: "Internal server error", data: [] });
+        }
+    },
+
+    async getCancellationSummary(req, res) {
+        try {
+            const { appointment_id, branch_id, user_id } = req.query;
+
+            // Initialize data object to store appointment, service, and refund details
+            const data = { appointmentDetails: [], serviceDetails: [], cancellation_reasons: [], refundSummary: [] };
+
+            // Retrieve appointment details from the database
+            const appointmentData = await Appointment.findOne({ where: { id: appointment_id, branch_id, user_id } });
+
+            // Check if appointment exists
+            if (!appointmentData) {
+                return res.status(404).json({ success: false, message: 'Appointment not found', data: [] });
+            }
+
+            // Retrieve branch details associated with the appointment
+            const branchDetails = await Branch.findOne({ where: { id: appointmentData.branch_id } });
+            const branchName = branchDetails.name;
+            const branchAddress = branchDetails.address;
+            const branchContact = branchDetails.contact;
+            // Retrieve services associated with the appointment
+            const appointmentServices = await AppointmentItems.findAll({ where: { appointment_id: appointment_id } });
+            if (!appointmentServices) {
+                return res.status(404).json({ success: false, message: 'Error Fetching Appointment Items ', data: [] });
+            }
+            // Process appointment services and add to data object
+            for (const iterator of appointmentServices) {
+                const serviceDetails = await ServiceOptions.findOne({ where: { id: iterator.service_option_id } });
+                if (serviceDetails) {
+                    data.serviceDetails.push({ name: serviceDetails.name, price: iterator.price });
+                }
+            }
+
+            // Format appointment date and start time
+            const appointment_date = moment(appointmentData.appointment_date).format("YYYY-MM-DD");
+            const start_time = moment(appointmentData.start_time, "HH:mm").format("HH:mm");
+
+            // Calculate refund amount and cancellation charges based on appointment status
+            let refund_amount = 0;
+            let cancellation_charges = 0;
+            const status = appointmentData.status;
+            const paidAmount = appointmentData.total_amount_paid;
+
+            if (status === 2) { // Confirmed
+                if (appointmentData.is_rescheduled !== 1) { // Not rescheduled
+                    const threeHoursBeforeAppointment = moment(`${appointment_date} ${start_time}`, 'YYYY-MM-DD HH:mm').subtract(3, 'hours');
+                    if (moment().isBefore(threeHoursBeforeAppointment)) {
+                        refund_amount = paidAmount;
+                    }
+                }
+                cancellation_charges = refund_amount === 0 ? paidAmount : 0;
+            } else {
+                // For other statuses, cancellation charges are equal to the paid amount
+                cancellation_charges = paidAmount;
+            }
+
+            // Retrieve cancellation reasons
+            const cancellationReasons = await CancellationReason.findAll({
+                attributes: ['id', 'reason']
+            });
+
+            // Add refund summary and appointment details to data object
+            data.appointmentDetails.push({ branchName, branchAddress, branchContact, appointment_reciept_number: appointmentData.receipt_number, appointment_date, start_time });
+            data.refundSummary.push({ paidAmount: parseFloat(paidAmount).toFixed(2), refund_amount: parseFloat(refund_amount).toFixed(2), cancellation_charges: parseFloat(cancellation_charges).toFixed(2) });
+            data.cancellation_reasons = cancellationReasons;
+
+            // Send the data object as the response
+            res.status(200).json({ success: true, data: data, message: "OK" });
+        } catch (error) {
+            // Handle any errors
+            logger.error("Error Fetching Canccellation Details: ", error);
+            res.status(500).json({ success: false, message: "Internal server error", data: [] });
+        }
+    },
+
+    async rescheduleAppointment(req, res) {
+        try {
+            const { appointment_id, newDate } = req.body;
+            let { newStartTime } = req.body;
+            if (moment(newDate, "YYYY-MM-DD").isBefore(moment())) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Sorry. We Can't Drive You Back In Past, Common Past Is Past. Just Kidding... New Appointment Date Can Not Be In Past."
+                })
+            }
+            // Get Appointment Details
+            const appointmentDetails = await Appointment.findByPk(appointment_id);
+
+            if (!appointmentDetails) {
+                return res.status(404).json({ success: false, message: 'Appointment not found', data: [] });
+            }
+
+            const { is_rescheduled, appointment_date, start_time, end_time, status, branch_id } = appointmentDetails;
+
+            const prevAppointment_date = moment(appointment_date).format("YYYY-MM-DD");
+            const prevStart_time = moment(start_time, "HH:mm").format("HH:mm");
+            const threeHoursBeforeAppointment = moment(`${prevAppointment_date} ${prevStart_time}`, 'YYYY-MM-DD HH:mm').subtract(3, 'hours');
+
+            // Checking if the appointment is rescheduleable
+            const isRescheduleable = (
+                status !== enums.appointmentType.Pending_Payment_Confirmation &&
+                status === enums.appointmentType.Confirmed && moment().isBefore(threeHoursBeforeAppointment) && is_rescheduled !== 1 &&
+                status !== enums.appointmentType.Closed &&
+                status !== enums.appointmentType.Cancelled &&
+                status !== enums.appointmentType.NoShow
+            );
+
+            if (!isRescheduleable) {
+                return res.status(403).json({ success: false, message: "Appointment is not eligible for rescheduling.", data: [] });
+            }
+
+            // Calculate new end time
+            const previousStartTimeMoment = moment(start_time, 'HH:mm');
+            const previousEndTimeMoment = moment(end_time, 'HH:mm');
+            const duration = moment.duration(previousEndTimeMoment.diff(previousStartTimeMoment));
+            const minutes = duration.asMinutes();
+            let newEndTime = moment(newStartTime, "HH:mm").add(minutes, "minutes").subtract(1, "minutes").format("HH:mm");
+
+            // Check if appointment time is outside of store hours
+            const appointmentWeekday = moment(newDate).format('dddd').toLowerCase();
+            const branchHours = await BranchHour.findOne({ where: { branch_id, day: appointmentWeekday } });
+
+            if (!branchHours) {
+                return res.status(403).json({ success: false, message: "Salon is not open on the selected appointment day." });
+            }
+
+            const { start_time: storeStartTime, end_time: storeEndTime } = branchHours;
+            const momentStoreStartTime = moment(storeStartTime, 'HH:mm');
+            const momentStoreEndTime = moment(storeEndTime, 'HH:mm');
+            const momentAppointmentStartTime = moment(newStartTime, 'HH:mm');
+
+            if (momentAppointmentStartTime.isBefore(momentStoreStartTime) || momentAppointmentStartTime.isAfter(momentStoreEndTime)) {
+                return res.status(403).json({ success: false, message: "Appointment time is outside of store hours." });
+            }
+
+            // Check for available seats
+            const branchDetails = await Branch.findByPk(branch_id);
+            const totalSeats = branchDetails.seats;
+            let availableSeat = 0;
+            newStartTime = moment(newStartTime, "HH:mm").format("HH:mm");
+            newEndTime = moment(newEndTime, "HH:mm").format("HH:mm");
+
+            for (let seatNumber = 1; seatNumber <= totalSeats; seatNumber++) {
+                const conflictingAppointments = await Appointment.findAll({
+                    where: {
+                        branch_id,
+                        seat_number: seatNumber,
+                        appointment_date: newDate,
+                        [Op.or]: [
+                            {
+                                start_time: { [Op.lte]: newStartTime },
+                                end_time: { [Op.gte]: newStartTime }
+                            },
+                            {
+                                start_time: { [Op.lte]: newEndTime },
+                                end_time: { [Op.gte]: newEndTime }
+                            }
+                        ]
+                    }
+                });
+
+                if (conflictingAppointments.length === 0) {
+                    availableSeat = seatNumber;
+                    break;
+                }
+            }
+
+            if (availableSeat === 0) {
+                return res.status(409).json({ success: false, message: "No available seats for the given time slot." });
+            }
+
+            // Update the appointment
+            const updateAppointment = await appointmentDetails.update({
+                appointment_date: newDate,
+                start_time: newStartTime,
+                end_time: newEndTime,
+                is_rescheduled: 1,
+                seat_number: availableSeat,
+                updated_at: moment().format()
+            });
+
+            res.json({ success: true, message: "OK", data: updateAppointment });
+        } catch (error) {
+            logger.error("Error in rescheduling appointment:", error);
+            res.status(500).json({ success: false, message: "Internal Server Error." });
+        }
+    },
+
+    async reserveASeat(req, res) {
+        try {
+            const { user_id, platform_coupon_id, branch_coupon_id, branch_id, appointment_date, appointment_time } = req.query;
+
+            // Validate date and time
+            if (!moment(appointment_date, "YYYY-MM-DD", true).isValid() || !moment(appointment_time, "HH:mm", true).isValid()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid appointment date or time format.",
+                    data: []
+                });
+            }
+
+            // Check coupon conflict
+            if (platform_coupon_id && branch_coupon_id) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Sorry, you cannot combine Salon/Branch coupons and platform coupons.",
+                    data: []
+                });
+            }
+
+            const data = {};
+
+            // Fetch user details
+            const userDetails = await User.findOne({
+                where: { id: user_id, status: enums.UserType.customer },
+                attributes: ['id', 'name', 'phone_number']
+            });
+
+            if (!userDetails) {
+                return res.status(404).json({
+                    success: false,
+                    message: "User not found.",
+                    data: []
+                });
+            }
+
+            data.userDetails = userDetails.dataValues;
+            data.schedule = {
+                appointment_date: moment(appointment_date).format("DD MMM"),
+                appointment_time: moment(appointment_time, "HH:mm").format("hh:mm A")
+            };
+
+            // Fetch branch details
+            const branchDetails = await Branch.findOne({
+                where: { id: branch_id },
+                attributes: ['id', 'name', 'address', 'city']
+            });
+
+            if (!branchDetails) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Salon/Branch not found.",
+                    data: []
+                });
+            }
+
+            data.branchDetails = branchDetails;
+
+            // Fetch offer details
+            const offerDetails = [];
+            if (platform_coupon_id) {
+                const platformCoupon = await PlatformCoupon.findOne({
+                    where: { id: platform_coupon_id, status: enums.is_active.yes },
+                    attributes: ['id', 'name', 'amount', 'remark', 'max_advance_payment', 'advance_percentage']
+                });
+                if (platformCoupon) offerDetails.push(platformCoupon);
+            }
+
+            if (branch_coupon_id) {
+                const branchCoupon = await BranchCoupon.findOne({
+                    where: { id: branch_coupon_id, status: enums.is_active.yes },
+                    attributes: ['id', 'name', 'amount', 'remark', 'max_advance_amount', 'advance_percentage', 'minimum_subtotal', 'start_date', 'end_date']
+                });
+                if (branchCoupon) offerDetails.push(branchCoupon);
+            }
+
+            data.offerDetails = offerDetails;
+
+            // Fetch user cart
+            const userCart = await Cart.findOne({
+                where: { user_id },
+                include: [{
+                    model: CartItems,
+                    include: [{
+                        model: ServiceOptions,
+                        attributes: ['id', 'name', 'price']
+                    }]
+                }]
+            });
+
+            if (!userCart || !userCart.CartItems.length) {
+                return res.status(404).json({
+                    success: false,
+                    message: "No items found in cart.",
+                    data: []
+                });
+            }
+
+            // Calculate amounts
+            let baseAmount = 0;
+            const services = userCart.CartItems.map(item => {
+                const price = parseFloat(item.ServiceOption.price);
+                baseAmount += price;
+                return {
+                    id: item.ServiceOption.id,
+                    name: item.ServiceOption.name,
+                    price: price.toFixed(2)
+                };
+            });
+
+            let discountAmount = 0;
+            let totalDiscountedAmount = baseAmount;
+            let discountedServices = [];
+
+            if (offerDetails.length > 0) {
+                discountAmount = offerDetails[0].amount;
+                discountedServices = services.map(service => {
+                    const discountedPrice = service.price - (service.price * discountAmount / 100);
+                    return {
+                        ...service,
+                        discountedPrice: discountedPrice.toFixed(2)
+                    };
+                });
+                totalDiscountedAmount = discountedServices.reduce((sum, service) => sum + parseFloat(service.discountedPrice), 0);
+            }
+
+            const gstRate = 0.18;
+            const platformFee = 5;
+            const gstAmount = totalDiscountedAmount * gstRate;
+            const grandTotal = totalDiscountedAmount + gstAmount + platformFee;
+
+            const bookingFee = (totalDiscountedAmount * (offerDetails[0]?.advance_percentage || 30)) / 100;
+            const finalBookingFee = Math.min(bookingFee, offerDetails[0]?.max_advance_payment || 150);
+
+            data.bookingSummary = {
+                bookingFee: finalBookingFee.toFixed(2),
+                grandTotal: grandTotal.toFixed(2),
+                tobepaid: finalBookingFee.toFixed(2)
+            };
+
+            data.billingSummary = {
+                itemTotal: baseAmount.toFixed(2),
+                discount: (baseAmount - totalDiscountedAmount).toFixed(2),
+                gst: gstAmount.toFixed(2),
+                platform_fee: platformFee.toFixed(2),
+                grandTotal: grandTotal.toFixed(2)
+            };
+
+            if (offerDetails.length > 0) {
+                data.discountedServices = discountedServices;
+            } else {
+                data.services = services;
+            }
+
+            return res.json({ success: true, data: data });
+        } catch (error) {
+            console.error("Error reserving a seat:", error);
+            return res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
+        }
     }
+
+
 }
+
 
 
 async function generateReceiptNumber() {

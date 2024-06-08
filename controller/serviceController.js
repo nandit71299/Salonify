@@ -1,27 +1,25 @@
 const { User, Saloon, Branch, sequelize, Services, ServiceOptions, AdditionalInformation, Category, Department, Sequelize } = require('../models');
 const logger = require('../config/logger');
 const moment = require('moment')
+const enums = require('../enums')
 moment.tz("Asia/Kolkata");
 
 module.exports = {
     async createService(req, res) {
         const jsonData = req.body;
         let service_id; // Declare the variable outside the transaction block
+
         const checkBranchExistence = await Branch.findOne({ where: { id: jsonData.branch_id } });
         if (!checkBranchExistence) {
             return res.status(404).json({
                 success: false,
                 message: "Salon/Branch not found",
                 data: [],
-            })
+            });
         }
-        try {
-            const service_name = jsonData.service_name;
-            const branch_id = jsonData.branch_id;
-            const category_id = jsonData.category_id;
-            const description = jsonData.description;
-            const department_id = jsonData.department_id;
 
+        try {
+            const { service_name, branch_id, category_id, description, department_id, service_options, additional_information } = jsonData;
 
             const checkCategory = await Category.findOne({ where: { id: category_id } });
             if (!checkCategory) {
@@ -29,7 +27,7 @@ module.exports = {
                     success: false,
                     message: "Selected Category Not Found. Please Choose Different Category Or Contact Customer Support ",
                     data: [],
-                })
+                });
             }
 
             const checkDepartment = await Department.findOne({ where: { id: department_id } });
@@ -38,9 +36,10 @@ module.exports = {
                     success: false,
                     message: "Selected Department Not Found. Please Choose Different Department or Contact Customer Support ",
                     data: [],
-                })
+                });
             }
 
+            // Start a managed transaction
             const transact = await sequelize.transaction(async (transaction) => {
                 const insertService = await Services.create(
                     {
@@ -56,7 +55,7 @@ module.exports = {
 
                 service_id = insertService.id; // Assign the value within the transaction block
 
-                for (const option of jsonData.service_options) {
+                for (const option of service_options) {
                     const { name, discount, price, description, duration } = option;
                     await ServiceOptions.create(
                         {
@@ -65,15 +64,16 @@ module.exports = {
                             discount: discount,
                             price: price,
                             description: description,
-                            duration: duration
+                            duration: duration,
+                            status: enums.is_active.yes
                         },
                         { transaction }
                     );
                 }
 
-                for (const element of jsonData.additional_information) {
+                for (const element of additional_information) {
                     const { title, description } = element;
-                    await AdditionalInformation.create(
+                    const createAdditionalInformation = await AdditionalInformation.create(
                         {
                             title: title,
                             description: description,
@@ -81,7 +81,11 @@ module.exports = {
                         },
                         { transaction }
                     );
-                };
+                    await Services.update(
+                        { additional_information_id: createAdditionalInformation.id },
+                        { where: { id: service_id }, transaction }
+                    );
+                }
             });
 
             res.status(200).json({ success: true, data: [{ service_id: service_id }], message: "Service Created Successfully" });
@@ -371,6 +375,95 @@ module.exports = {
         catch (error) {
             logger.error("Error updating service:", error);
             res.status(500).json({ success: false, message: "Error updating service.", data: [] });
+        }
+    },
+
+
+    async getBranchServices(req, res) {
+        const branch_id = req.query.branch_id;
+        const sortingOption = req.query.sortingOption;
+        const sortingMethod = req.query.sortingMethod;
+
+        try {
+            let data = {};
+
+            // Fetch all departments
+            const departments = await Department.findAll();
+
+            for (const department of departments) {
+                const departmentName = department.name;
+                data[departmentName] = {};
+
+                // Fetch services for the current department
+                const services = await Services.findAll({
+                    where: {
+                        branch_id: branch_id,
+                        department_id: department.id,
+                        status: enums.is_active.yes
+                    },
+                    include: [
+                        {
+                            model: ServiceOptions,
+                            where: { status: enums.is_active.yes },
+                            required: false
+                        },
+                        {
+                            model: AdditionalInformation,
+                            where: { status: enums.is_active.yes },
+                            required: false
+                        }
+                    ]
+                });
+
+                for (const service of services) {
+                    const categoryId = service.category_id;
+
+                    // Fetch category name for the current service
+                    const category = await Category.findOne({
+                        where: { id: categoryId }
+                    });
+
+                    const categoryName = category.name;
+
+                    // Sort service options if sorting parameters are provided
+                    let serviceOptions = service.ServiceOptions;
+                    if (sortingOption && sortingMethod) {
+                        serviceOptions = serviceOptions.sort((a, b) => {
+                            if (sortingMethod === 'asc') {
+                                return a.price - b.price;
+                            } else if (sortingMethod === 'desc') {
+                                return b.price - a.price;
+                            } else {
+                                return 0;
+                            }
+                        });
+                    }
+
+                    // Skip adding service if it doesn't have any service options
+                    if (serviceOptions.length === 0) {
+                        continue;
+                    }
+
+                    // Initialize the category if it doesn't exist
+                    if (!data[departmentName][categoryName]) {
+                        data[departmentName][categoryName] = [];
+                    }
+
+                    // Add service with its options to the category
+                    data[departmentName][categoryName].push({
+                        service_id: service.id,
+                        service_name: service.name,
+                        service_description: service.description,
+                        additional_information: service.AdditionalInformations,
+                        service_options: serviceOptions
+                    });
+                }
+            }
+
+            res.json({ success: true, data: data, message: "OK" });
+        } catch (error) {
+            logger.error('Error fetching services:', error);
+            res.status(500).json({ success: false, data: [], message: 'Internal server error' });
         }
     }
 

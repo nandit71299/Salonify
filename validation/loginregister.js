@@ -120,3 +120,32 @@ exports.validateSalonLogin = [
         next();
     }
 ]
+
+exports.validateGetCustomerProfile = [
+
+    check("user_id").isInt(),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+        next();
+    }
+
+
+]
+
+exports.validateUpdateCustomerProfile = [
+    check("user_id").isInt(),
+
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+        next();
+    }
+
+]

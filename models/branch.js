@@ -14,6 +14,8 @@ module.exports = (sequelize, DataTypes) => {
       Branch.hasMany(models.Appointment, { foreignKey: 'branch_id' });
       Branch.hasMany(models.BranchCoupon, { foreignKey: 'branch_id' });
       Branch.belongsTo(models.Saloon, { foreignKey: 'saloon_id' });
+      Branch.hasMany(models.Services, { foreignKey: 'branch_id' });
+      Branch.hasMany(models.Rating, { foreignKey: 'module_id', scope: { module_type: 1 } }); // Assuming 1 represents branches
     }
   }
   Branch.init({

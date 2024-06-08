@@ -1,5 +1,5 @@
 const logger = require('../config/logger');
-const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch, Services } = require('../models');
+const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch, Services, Rating } = require('../models');
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const fs = require('fs');
@@ -50,7 +50,7 @@ module.exports = {
 
             res.status(200).json({ success: true, message: "Store hours inserted successfully", data: [] });
         } catch (error) {
-            console.error("Error inserting store hours:", error);
+            logger.error("Error inserting store hours:", error);
             res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] });
         }
     },
@@ -130,7 +130,7 @@ module.exports = {
 
             res.status(200).json({ success: true, message: "Store hours updated successfully", data: [] });
         } catch (error) {
-            console.error("Error inserting store hours:", error);
+            logger.error("Error inserting store hours:", error);
             res.status(500).json({ success: false, message: "Internal server error occurred.", data: [] });
         }
     },
@@ -481,7 +481,7 @@ module.exports = {
                     { latitude, longitude },
                     { latitude: salon.latitude, longitude: salon.longitude }
                 );
-                console.log(distance)
+
                 return distance <= maxDistance;
             });
 
@@ -523,6 +523,119 @@ module.exports = {
         } catch (error) {
             logger.error('Error fetching active branches:', error);
             res.status(500).json({ success: false, data: [], message: 'Internal Server Error.' });
+        }
+    },
+
+    async rateBranch(req, res) {
+        const { user_id, branch_id, rating, comment } = req.body;
+
+        const checkUser = await User.findOne({ where: { id: user_id, status: enums.is_active.yes } });
+        const checkBranch = await Branch.findOne({ where: { id: branch_id, status: enums.is_active.yes } });
+
+        if (!checkUser || !checkBranch) {
+            return res.status(404).json({ success: false, message: "No luck finding that user/branch.", data: [] });
+        }
+
+        try {
+            const createRating = await Rating.create({
+                user_id: user_id,
+                module_type: enums.ratingModule.branch,
+                module_id: branch_id,
+                rating: rating,
+                comment: comment,
+            }, { returning: true })
+
+            res.status(200).json({
+                success: true,
+                message: "OK",
+                data: createRating.id,
+            })
+        } catch (error) {
+            logger.error("Error Inserting Salon/Branch Rating: ", error);
+            return res.status(500).json({
+                success: true,
+                message: "Internal Server Error",
+                data: []
+            })
+        }
+
+    },
+
+    async getBranchDetails(req, res) {
+        const branch_id = req.query.branch_id;
+
+        try {
+            let data = {};
+
+            // Fetch branch details using Sequelize
+            const branch = await Branch.findOne({
+                where: { id: branch_id }
+            });
+
+            if (!branch) {
+                return res.status(404).json({ success: false, errors: "Salon/Branch not found", data: [] });
+            }
+
+            const { saloon_id, name, city_id, address, type, latitude, longitude, seats, status } = branch;
+
+            let branchDetails = {
+                saloon_id: saloon_id,
+                name: name,
+                city_id: city_id,
+                address: address,
+                type: parseInt(type) === 1 ? "Unisex" : parseInt(type) === 2 ? "Men's" : parseInt(type) === 3 ? "Women's" : "",
+                latitude: latitude,
+                longitude: longitude,
+                status: status
+            };
+
+            // Check if BranchDetails exists in data
+            if (!data['BranchDetails']) {
+                data['BranchDetails'] = [];
+            }
+
+            // Push branch details to the array
+            data['BranchDetails'].push(branchDetails);
+
+            // Fetch BranchHours for the current branch using Sequelize
+            const branchHours = await BranchHour.findAll({
+                where: { branch_id: branch_id },
+                order: [
+                    [sequelize.literal(`CASE day 
+                        WHEN 'monday' THEN 1 
+                        WHEN 'tuesday' THEN 2 
+                        WHEN 'wednesday' THEN 3 
+                        WHEN 'thursday' THEN 4 
+                        WHEN 'friday' THEN 5 
+                        WHEN 'saturday' THEN 6 
+                        WHEN 'sunday' THEN 7 
+                        END`)]
+                ]
+            });
+
+            if (branchHours.length > 0) {
+                // Initialize BranchHours array if it doesn't exist in data
+                if (!data['BranchHours']) {
+                    data['BranchHours'] = [];
+                }
+                for (const hour of branchHours) {
+                    const day = hour.day;
+                    const start_time = hour.start_time;
+                    const end_time = hour.end_time;
+                    // Push branch hours to the array
+                    let branch_hour = {
+                        day: day.charAt(0).toUpperCase() + day.slice(1),
+                        start_time: start_time,
+                        end_time: end_time
+                    };
+                    data['BranchHours'].push(branch_hour);
+                }
+            }
+
+            res.json({ success: true, data: data, message: "OK" });
+        } catch (error) {
+            logger.error('Error fetching branch details:', error);
+            res.status(500).json({ success: false, message: 'Internal server error', data: [] });
         }
     }
 

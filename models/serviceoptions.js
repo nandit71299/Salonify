@@ -12,7 +12,8 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       ServiceOptions.belongsTo(models.Services, { foreignKey: 'service_id' });
       ServiceOptions.hasMany(models.AppointmentItems, { foreignKey: 'service_option_id' });
-
+      ServiceOptions.hasMany(models.CartItems, { foreignKey: 'service_option_id' });
+      ServiceOptions.hasMany(models.Rating, { foreignKey: 'module_id', scope: { module_type: 2 } }); // Assuming 2 represents service options
     }
   }
   ServiceOptions.init({

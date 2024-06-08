@@ -439,7 +439,7 @@ module.exports = {
                     data: [findUser.dataValues]
                 });
             } else {
-                console.log(sendMail)
+
                 response.status(500).json({ success: false, message: 'Error sending verification email', data: [] });
             }
         } catch (error) {
@@ -513,6 +513,54 @@ module.exports = {
         catch (error) {
             logger.error("Error occurred during registration:", error);
             return response.status(500).json({ success: false, message: "Error occurred during registration", data: [], error });
+        }
+    },
+
+    async getCustomerProfile(req, res) {
+        try {
+            const user_id = req.query.user_id;
+
+            const userDetails = await User.findOne({
+                where: { id: user_id, status: enums.is_active.yes },
+                attributes: ['name', 'email', 'phone_number']
+            });
+
+            if (!userDetails) {
+                return res.status(404).json({
+                    success: true,
+                    message: "No User Found",
+                    data: []
+                });
+            }
+
+            res.json({ success: true, data: userDetails });
+        } catch (error) {
+            logger.error("Error fetching user details:", error);
+            res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
+        }
+    },
+
+    async updateCustomerProfile(req, res) {
+        try {
+            const { user_id, name } = req.body;
+
+            const user = await User.findOne({ where: { id: user_id, status: enums.is_active.yes } });
+
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: "No User Found",
+                    data: []
+                });
+            }
+
+            user.name = name;
+            await user.save();
+
+            res.json({ success: true, message: "User name updated successfully", data: user });
+        } catch (error) {
+            logger.error("Error updating user details:", error);
+            res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
         }
     }
 

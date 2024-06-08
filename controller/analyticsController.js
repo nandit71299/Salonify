@@ -74,7 +74,7 @@ module.exports = {
                 message: "OK"
             });
         } catch (error) {
-            console.error(error);
+            logger.error("Error In Getting Appointment Analytics: ", error);
             res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
         }
 
@@ -126,7 +126,7 @@ module.exports = {
                 message: "OK"
             });
         } catch (error) {
-            console.error(error);
+            logger.error("Error in Getting Payments With Date Range: ", error);
             res.status(500).json({
                 success: false,
                 message: "Internal Server Error Occurred",

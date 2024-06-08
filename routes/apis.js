@@ -17,6 +17,8 @@ const offerData = require('../validation/branchOffers');
 const platform_coupon = require('../validation/platformCoupon');
 const analytics = require('../validation/analytics');
 const cart = require('../validation/cart')
+const search = require('../validation/search')
+const wishlist = require('../validation/wishlist')
 
 //Controllers
 const LoginRegisterController = require('../controller/loginregister')
@@ -29,6 +31,9 @@ const OfferController = require('../controller/branchOfferController')
 const PlatformCouponController = require('../controller/platformCouponController')
 const AnalyticsController = require('../controller/analyticsController')
 const CartController = require('../controller/cartController')
+const SearchController = require('../controller/searchController')
+const WishtlistController = require('../controller/wishlistController')
+const PaymentsController = require('../controller/paymentsController')
 
 // Login & Registration
 router.post('/registersalon', upload.single('image'), loginregister.validateSalonRegistration, LoginRegisterController.registerSalon);
@@ -52,11 +57,8 @@ router.put('/update-store-hours', branch.validateBranchHours, BranchController.u
 router.get('/store-hours', branch.validateGetBranchHours, BranchController.getBranchHours);
 
 // Appointment Related
-router.post('/get-branch-vacancy', appointmentData.validateBranchVacancy, AppointmentController.branchvacancy);
-router.get('/get-branch-offers', offerData.validateGetBranchOffers, OfferController.getBranchOffers);
 router.get('/appointments', appointmentData.validateGetAllAppointments, AppointmentController.getAllAppointments)
 router.get('/appointmentdetails', appointmentData.validateGetAppoitmentDetails, AppointmentController.getAppointmentDetails)
-router.post('/book-appointment', appointmentData.validateApointmentBooking, AppointmentController.bookAppointment);
 
 // Holidays
 router.post('/holiday', branch.validateInsertBranchHoliday, BranchController.createHoliday);
@@ -118,26 +120,28 @@ router.post('/add-to-cart', cart.validateAddToCart, CartController.addToCart);
 router.delete('/remove-from-cart', cart.validateRemoveFromCart, CartController.removeFromCart)
 router.delete('/cart-delete-all', cart.validateCartDeleteAll, CartController.cartDeleteAll)
 router.get('/cartcount', cart.validateGetCartCount, CartController.getCartCount);
-// router.post('/ratesalon');
-// router.post('/searchserviceorsalon');
-// router.get('/branchdetails');
-// router.get('/branchservices');
-// router.delete('/remove-from-cart');
-// router.delete('/cartdeleteall');
-// ADD RESERVE A SEAT PAGE ROUTE WHICH GETS ALL SERVICES USER ADDED IN THE CART, GET ITS PRICE FROM SERVICE_OPTIONS AND SEND OTHER INFORMATION
-// router.get('/bookingshistory');
-// router.get('/servicewishlist');
-// router.put('/branchwishlist');
-// router.put('/branchwishlist');
+router.post('/ratebranch', branch.validateRateBranch, BranchController.rateBranch);
+router.post('/searchserviceorsalon', search.validateSearchServiceOrBranch, SearchController.searchServiceOrBranch);
+router.get('/branchdetails', branch.validateGetBranchDetails, BranchController.getBranchDetails);
+router.get('/branchservices', service.validateGetBranchServices, ServiceController.getBranchServices);
+router.get('/reserveaseat', appointmentData.validateReserveASeat, AppointmentController.reserveASeat)
+router.get('/get-branch-offers', offerData.validateGetBranchOffers, OfferController.getBranchOffers);
+router.post('/get-branch-vacancy', appointmentData.validateBranchVacancy, AppointmentController.branchvacancy);
+router.post('/book-appointment', appointmentData.validateApointmentBooking, AppointmentController.bookAppointment);
+router.get('/bookingshistory', appointmentData.validateGetBookingHistory, AppointmentController.getBookingHistory);
+router.put('/wishlist', wishlist.validateCreateOrUpdateWishlist, WishtlistController.createOrUpdateWishlist);
 // router.post("/initiateadvancepayment");
 // router.post("/initiatepostservicepayment");
-// router.post("/appointmentdetails");
-// router.post("/cancellationsummary");
-// router.put("/rescheduleappointment");
-// router.get("/wishlisteditems");
-// router.get("/customerprofile");
+router.get("/customerappointmentdetails", appointmentData.validateGetCustomerAppointmentDetails, AppointmentController.getCustomerAppointmentDetails);
+router.get("/cancellationsummary", appointmentData.validateGetCancellationSummary, AppointmentController.getCancellationSummary);
+router.put("/rescheduleappointment", appointmentData.validateRescheduleAppointment, AppointmentController.rescheduleAppointment);
+router.get("/wishlisteditems", wishlist.validateGetAllWishlistedItems, WishtlistController.getAllWishlistedItems);
+router.get("/customerprofile", loginregister.validateGetCustomerProfile, LoginRegisterController.getCustomerProfile);
+router.put('/customerprofile', loginregister.validateUpdateCustomerProfile, LoginRegisterController.updateCustomerProfile)
+
 // router.get("/getallpayments");
 
 
+router.post('/confirm-appointment', PaymentsController.confirmAppointment)
 
 module.exports = router;

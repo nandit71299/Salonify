@@ -11,7 +11,9 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       Services.hasMany(models.ServiceOptions, { foreignKey: 'service_id', });
-
+      Services.hasMany(models.Rating, { foreignKey: 'module_id', scope: { module_type: 2 } });
+      Services.belongsTo(models.Branch, { foreignKey: 'branch_id' });
+      Services.hasMany(models.AdditionalInformation, { foreignKey: 'service_id' })
     }
   }
   Services.init({

@@ -79,7 +79,6 @@ module.exports = {
                     returning: true,
                 },
             );
-            console.log(affectedRows)
 
             if (affectedRows < 1) {
                 return res.status(409).json({
@@ -451,7 +450,7 @@ module.exports = {
                 });
             }
 
-            // return console.log(appointments)
+
             // Formatting the result
             const data = appointments.map(appointment => ({
                 service_name: appointment.dataValues.service_name,

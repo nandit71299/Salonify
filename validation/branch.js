@@ -180,7 +180,6 @@ exports.validateGetBranchHoliday = [
     }
 ]
 
-
 exports.validateGetSalonProfileDetails = [
 
     check("branch_id").notEmpty().isNumeric(),
@@ -240,6 +239,35 @@ exports.validateGetNearbySalons = [
 exports.validateGetBranchesByCategory = [
     check("category_id").isInt().withMessage("Category ID must be an integer"),
     check("city").isString().notEmpty().withMessage("City must be a non-empty string"),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+
+        next();
+    }
+]
+
+exports.validateRateBranch = [
+    check('user_id').isNumeric(),
+    check('branch_id').isNumeric(),
+    check('rating').isNumeric(),
+    check('comment').optional().isString(),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+
+        next();
+    }
+]
+
+exports.validateGetBranchDetails = [
+    check('branch_id').isNumeric(),
     (request, response, next) => {
         const errors = validationResult(request);
         if (!errors.isEmpty()) {
