@@ -20,8 +20,12 @@ module.exports = {
             for (const category of categoryData) {
                 let imagePath = category.image;
                 const filePath = path.resolve(__dirname, imagePath);
-                const contents = await fs.promises.readFile(filePath, { encoding: 'base64' });
-                categories.push({ id: category.id, name: category.name, image: contents });
+                if (fs.existsSync(filePath)) {
+                    const contents = await fs.promises.readFile(filePath, { encoding: 'base64' });
+                    categories.push({ id: category.id, name: category.name, image: contents });
+                } else {
+                    continue
+                }
             }
 
             res.status(200).json({
@@ -31,7 +35,7 @@ module.exports = {
             })
         } catch (error) {
             logger.error("Error Fetching Categories: ", error);
-            res.status(500).json({ success: false, message: "Internal Server Error", error: 'error', data: [] });
+            res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
         }
     }
 }

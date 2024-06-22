@@ -70,17 +70,86 @@ module.exports = {
                 return res.status(404).json(serviceDurationResult);
             }
 
-            const serviceDuration = serviceDurationResult.data; // Total service duration in minutes
+            const serviceDuration = serviceDurationResult.data.totalDuration; // Total service duration in minutes
             const slotInterval = serviceDuration + 15; // Slot interval in minutes
 
             const { availableSlots, unavailableSlots } = await generateSlots(branchStartTime, branchEndTime, serviceDuration, slotInterval, holidayHours, branch_id, formatedAppointmentDate);
+
+            const getPlatformOffers = await PlatformCouponBranch.findAll(
+                {
+                    where: { branch_id, status: enums.is_active.yes },
+                    include: {
+                        model: PlatformCoupon,
+                        attributes: ['name', 'amount', 'id', 'remark', 'status', 'max_advance_payment', 'advance_percentage']
+                    }
+                }
+            )
+            let platformOffers = []
+
+            for (const platformOffer of getPlatformOffers) {
+                platformOffers.push({
+                    id: platformOffer.PlatformCoupon.id,
+                    name: platformOffer.PlatformCoupon.name,
+                    amount: platformOffer.PlatformCoupon.amount,
+                    remark: platformOffer.PlatformCoupon.remark,
+                    status: platformOffer.PlatformCoupon.status,
+                    max_advance_payment: platformOffer.PlatformCoupon.max_advance_payment,
+                    advance_percentage: platformOffer.PlatformCoupon.advance_percentage
+                })
+            }
+
+            const getBranchCoupons = await BranchCoupon.findAll(
+                {
+                    where: { branch_id, status: enums.is_active.yes },
+                }
+            )
+
+            let branchCoupons = { eligible_coupons: [], not_eligible: [] };
+
+            for (const coupon of getBranchCoupons) {
+                const subtotal = serviceDurationResult.data.totalPrice;
+
+                if (subtotal >= coupon.minimum_subtotal) {
+                    if (moment(appointmentDate).isSame(moment(coupon.start_date)) && moment(appointmentDate).isSame(moment(coupon.end_date)) || moment(appointmentDate).isBetween(moment(coupon.start_date), moment(coupon.end_date))) {
+                        branchCoupons.eligible_coupons.push({
+                            id: coupon.id,
+                            branch_id: coupon.branch_id,
+                            name: coupon.name,
+                            remarks: coupon.remark,
+                            status: coupon.status,
+                            max_advance_amount: (coupon.max_advance_amount).toFixed(2),
+                            advance_percentage: (coupon.advance_percentage).toFixed(2),
+                            minimum_subtotal: (coupon.minimum_subtotal).toFixed(2),
+                            discount_amount: (coupon.amount).toFixed(2)
+                        })
+                    }
+                } else {
+                    if (moment(appointmentDate).isSame(moment(coupon.start_date)) && moment(appointmentDate).isSame(moment(coupon.end_date)) || moment(appointmentDate).isBetween(moment(coupon.start_date), moment(coupon.end_date))) {
+                        branchCoupons.not_eligible.push({
+                            id: coupon.id,
+                            branch_id: coupon.branch_id,
+                            name: coupon.name,
+                            remarks: coupon.remark,
+                            status: coupon.status,
+                            max_advance_amount: (coupon.max_advance_amount).toFixed(2),
+                            advance_percentage: (coupon.advance_percentage).toFixed(2),
+                            minimum_subtotal: (coupon.minimum_subtotal).toFixed(2),
+                            discount_amount: (coupon.amount).toFixed(2)
+                        })
+                    }
+                }
+            }
+
 
             return res.json({
                 success: true,
                 message: "Appointment slots generated successfully.",
                 data: [{
                     available_slots: availableSlots,
-                    unavailable_slots: unavailableSlots
+                    unavailable_slots: unavailableSlots,
+                    platformOffers: platformOffers,
+                    branchOffers: branchCoupons,
+                    sutotal: serviceDurationResult.data.totalPrice,
                 }]
             });
 
@@ -1196,14 +1265,14 @@ module.exports = {
             data.bookingSummary = {
                 bookingFee: finalBookingFee.toFixed(2),
                 grandTotal: grandTotal.toFixed(2),
-                tobepaid: finalBookingFee.toFixed(2)
+                toBePaid: finalBookingFee.toFixed(2)
             };
 
             data.billingSummary = {
                 itemTotal: baseAmount.toFixed(2),
                 discount: (baseAmount - totalDiscountedAmount).toFixed(2),
                 gst: gstAmount.toFixed(2),
-                platform_fee: platformFee.toFixed(2),
+                platformFee: platformFee.toFixed(2),
                 grandTotal: grandTotal.toFixed(2)
             };
 
@@ -1217,6 +1286,91 @@ module.exports = {
         } catch (error) {
             console.error("Error reserving a seat:", error);
             return res.status(500).json({ success: false, message: "Internal Server Error", data: [] });
+        }
+    },
+
+    async cancelAppointment(req, res) {
+        const { user_id, appointment_id } = req.body;
+
+        try {
+            let refund_amount = 0;
+            let cancellation_charges = 0;
+
+            const findAppointment = await Appointment.findOne({ where: { user_id, id: appointment_id } })
+            if (!findAppointment) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Appointment Not Found",
+                    data: []
+                })
+            }
+            if (findAppointment.status === enums.appointmentType.Cancelled) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Appointment Is Already Cancelled.",
+                    data: []
+                })
+            }
+            const appointment_date = findAppointment.appointment_date;
+            const start_time = findAppointment.start_time;
+            const status = findAppointment.status;
+            const paidAmount = findAppointment.total_amount_paid;
+
+            if (status === enums.appointmentType.Confirmed) {
+                // Confirmed
+                if (findAppointment.is_rescheduled !== 1) {
+                    // Not rescheduled
+                    const threeHoursBeforeAppointment = moment(`${appointment_date} ${start_time}`, 'YYYY-MM-DD HH:mm').subtract(3, 'hours');
+                    if (moment().isBefore(threeHoursBeforeAppointment)) {
+                        refund_amount = paidAmount;
+                    }
+                }
+                cancellation_charges = refund_amount === 0 ? paidAmount : 0;
+            } else {
+                // For other statuses, cancellation charges are equal to the paid amount
+                cancellation_charges = paidAmount;
+            }
+
+            if (refund_amount > 1) {
+                const updateAppointment = await Appointment.update({ status: enums.appointmentType.Cancelled }, { where: { id: appointment_id, user_id } })
+                if (updateAppointment) {
+                    return res.json({
+                        success: true,
+                        message: "Cancel Appointment and Send Refund Request To Payment Gateway",
+                        data: { cancellation_charges, refund_amount }
+                    });
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Error Cancelling Appointment",
+                        data: []
+                    })
+                }
+            } else {
+                const updateAppointment = await Appointment.update({ status: enums.appointmentType.Cancelled }, { where: { id: appointment_id, user_id } })
+                if (updateAppointment) {
+                    return res.json({
+                        success: true,
+                        message: "Cancel Appointment",
+                        data: { cancellation_charges, refund_amount }
+                    });
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Error Cancelling Appointment",
+                        data: []
+                    })
+                }
+            }
+
+
+        } catch (error) {
+            logger.error("Error Cancelling Appointment: ", error);
+            return res.status(500).json({
+                success: false,
+                message: "Internal Server Error",
+                data: []
+            })
         }
     }
 
@@ -1351,11 +1505,12 @@ async function getAppointmentsForSeat(branch_id, seatNo, appointment_date) {
 async function getTotalServiceDuration(services, branch_id) {
     try {
         let totalDuration = 0;
+        let totalPrice = 0;
 
         for (const element of services) {
             const service_id = element.service_id;
             const getServiceDuration = await ServiceOptions.findAll({
-                attributes: ['duration', 'id'],
+                attributes: ['duration', 'id', 'price', 'discount'],
                 include: [{
                     model: Services,
                     attributes: ['branch_id'],
@@ -1382,13 +1537,17 @@ async function getTotalServiceDuration(services, branch_id) {
                 if (isNaN(serviceDuration) || typeof (serviceDuration) === undefined) {
                     throw new Error(`Invalid duration for service ID ${service_id}`);
                 }
+                totalPrice += (service.price - service.discount)
                 totalDuration += serviceDuration;
             }
         }
 
         return {
             success: true,
-            data: totalDuration
+            data: {
+                totalDuration,
+                totalPrice
+            }
         };
 
     } catch (error) {

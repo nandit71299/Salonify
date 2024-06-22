@@ -138,3 +138,17 @@ exports.validateReserveASeat = [
     }
 
 ]
+
+exports.validateCancelAppointment = [
+    body('user_id').isNumeric(),
+    body('appointment_id').isNumeric(),
+    (request, response, next) => {
+        const errors = validationResult(request);
+        if (!errors.isEmpty()) {
+            logger.error("Bad Request:", errors.array());
+            return response.status(400).json({ success: false, message: "400 Bad Request", errors: errors.array(), data: [] });
+        }
+        next();
+    }
+
+]

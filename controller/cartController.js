@@ -1,4 +1,6 @@
-const { Cart, CartItems, ServiceOptions, sequelize } = require('../models');
+const fs = require('fs');
+const path = require('path');
+const { Branch, Cart, CartItems, ServiceOptions, sequelize } = require('../models');
 const { Op, fn, col } = require('sequelize');
 const enums = require('../enums')
 const logger = require('../config/logger')
@@ -139,34 +141,51 @@ module.exports = {
         const user_id = req.query.user_id;
 
         try {
+            // Validate user_id
+            if (!user_id) {
+                return res.status(400).json({ success: false, message: 'User ID is required', data: [] });
+            }
+
             // Query to get the number of items and branch_id associated with the user's cart
             const cartDetails = await CartItems.findAll({
                 include: [{
                     model: Cart,
-                    where: { user_id: user_id },
+                    where: { user_id },
                     attributes: ['branch_id']
                 }],
-                attributes: [[sequelize.fn('COUNT', sequelize.col('CartItems.id')), 'item_count'],
-                    'Cart.branch_id'],
+                attributes: [[sequelize.fn('COUNT', sequelize.col('CartItems.id')), 'item_count']],
                 group: ['Cart.branch_id', 'Cart.id']
-            })
+            });
 
-            if (cartDetails.length < 1) {
-
-                return res.status(200).json({ success: true, data: [], message: "OK" });
+            // Check if cart details are found
+            if (!cartDetails.length) {
+                return res.status(200).json({ success: true, data: [], message: 'OK' });
             }
 
-            // Extract the item count and branch_id from the result
+            const branchId = cartDetails[0].Cart.branch_id;
+
+            // Get the branch image path
+            const branch = await Branch.findOne({ where: { id: branchId }, attributes: ['image'] });
+            let imageBase64 = null;
+
+            if (branch && branch.image) {
+                const filePath = path.resolve(__dirname, branch.image);
+
+                if (fs.existsSync(filePath)) {
+                    imageBase64 = await fs.promises.readFile(filePath, { encoding: 'base64' });
+                }
+            }
+
             const data = cartDetails.map(item => ({
                 item_count: parseInt(item.getDataValue('item_count')),
-                branch_id: item.getDataValue('Cart').branch_id
+                branch_id: item.Cart.branch_id,
+                branch_image: imageBase64
             }));
 
-            res.status(200).json({ success: true, data: data, message: "OK" });
+            res.status(200).json({ success: true, data, message: 'OK' });
         } catch (error) {
             logger.error('Error fetching cart item count:', error);
             res.status(500).json({ success: false, data: [], message: 'Internal Server Error.' });
         }
-
     }
 }

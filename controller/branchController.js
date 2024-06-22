@@ -1,3 +1,4 @@
+const path = require('path');
 const logger = require('../config/logger');
 const { User, Saloon, Branch, BranchHour, sequelize, HolidayHour, PlatformCoupon, PlatformCouponBranch, Services, Rating } = require('../models');
 const { Op, fn, col } = require('sequelize');
@@ -484,9 +485,29 @@ module.exports = {
 
                 return distance <= maxDistance;
             });
+            let data = [];
+            for (const salon of nearbySalons) {
+                let imagePath = salon.image;
+                let contents = null;
+                const filePath = path.resolve(__dirname, imagePath);
+                if (fs.existsSync(filePath)) {
+                    contents = await fs.promises.readFile(filePath, { encoding: 'base64' });
+                }
+                data.push({
+                    id: salon.id,
+                    name: salon.name,
+                    city: salon.city,
+                    address: salon.address,
+                    type: salon.type === enums.salon_type.unisex ? "Unisex" : salon.type === enums.salon_type.mens ? "Men's" : salon.type === enums.salon_type.womens ? "Woemn's" : "Unknown",
+                    contact: salon.contact,
+                    image: contents,
+                    seats: salon.seats,
+                    status: salon.status
+                })
+            }
 
             // Step 3: Return the filtered list of salons
-            res.json({ success: true, data: nearbySalons, message: "OK" });
+            res.json({ success: true, data: data, message: "OK" });
         } catch (error) {
             // Handle any errors that occur during the query or filtering process
             logger.error('Error fetching nearby salons:', error);

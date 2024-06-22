@@ -13,7 +13,6 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
       PlatformCouponBranch.belongsTo(models.PlatformCoupon, {
         foreignKey: 'platform_coupon_id',
-        as: 'coupon'
       });
     }
   }

@@ -19,6 +19,7 @@ const analytics = require('../validation/analytics');
 const cart = require('../validation/cart')
 const search = require('../validation/search')
 const wishlist = require('../validation/wishlist')
+const payments = require('../validation/payments')
 
 //Controllers
 const LoginRegisterController = require('../controller/loginregister')
@@ -77,6 +78,8 @@ router.delete('/serviceoption', serviceOption.validateDeleteServiceOption, Servi
 // Coupons Related
 router.post('/join-platform-coupon', platform_coupon.validateJoinPlatformCoupon, PlatformCouponController.joinPlatformCoupon)
 router.post('/exit-platform-coupon', platform_coupon.validateExitPlatformCoupon, PlatformCouponController.exitPlatformCoupon)
+router.post('/offer', offerData.validateCreateOffer, OfferController.createOffer)
+router.get('/getBranchOfferDetails', offerData.validategetBranchOfferDetails, OfferController.getBranchOfferDetails)
 
 // Analytics Related
 router.get('/appoitmentanalyticswithdaterange', analytics.validateGetAppointmentAnalyticsWithDateRange, AnalyticsController.getAppointmentAnalyticsWithDateRange)
@@ -87,6 +90,9 @@ router.get('/detailedappointmentanalytics', analytics.validateGetDetailedAppoint
 router.get('/salesovertimereport', analytics.validateGetSalesOverTimeReport, AnalyticsController.getSalesOverTimeReport);
 router.get('/salesbyservicereport', analytics.validateGetSalesByServiceReport, AnalyticsController.getSalesByServiceReport);
 router.get('/toppayingcustomersreport', analytics.validateGetTopPayingCustomersReport, AnalyticsController.getTopPayingCustomersReport);
+
+//Payments
+router.get('/payments', payments.validateGetAllPayments, PaymentsController.getAllPayments)
 
 
 // Salon/Branch Related
@@ -124,9 +130,9 @@ router.post('/ratebranch', branch.validateRateBranch, BranchController.rateBranc
 router.post('/searchserviceorsalon', search.validateSearchServiceOrBranch, SearchController.searchServiceOrBranch);
 router.get('/branchdetails', branch.validateGetBranchDetails, BranchController.getBranchDetails);
 router.get('/branchservices', service.validateGetBranchServices, ServiceController.getBranchServices);
-router.get('/reserveaseat', appointmentData.validateReserveASeat, AppointmentController.reserveASeat)
-router.get('/get-branch-offers', offerData.validateGetBranchOffers, OfferController.getBranchOffers);
 router.post('/get-branch-vacancy', appointmentData.validateBranchVacancy, AppointmentController.branchvacancy);
+router.get('/reserveaseat', appointmentData.validateReserveASeat, AppointmentController.reserveASeat)
+router.get('/get-all-branch-offers', offerData.validateGetAllBranchOffers, OfferController.getAllBranchOffers);
 router.post('/book-appointment', appointmentData.validateApointmentBooking, AppointmentController.bookAppointment);
 router.get('/bookingshistory', appointmentData.validateGetBookingHistory, AppointmentController.getBookingHistory);
 router.put('/wishlist', wishlist.validateCreateOrUpdateWishlist, WishtlistController.createOrUpdateWishlist);
@@ -134,6 +140,7 @@ router.put('/wishlist', wishlist.validateCreateOrUpdateWishlist, WishtlistContro
 // router.post("/initiatepostservicepayment");
 router.get("/customerappointmentdetails", appointmentData.validateGetCustomerAppointmentDetails, AppointmentController.getCustomerAppointmentDetails);
 router.get("/cancellationsummary", appointmentData.validateGetCancellationSummary, AppointmentController.getCancellationSummary);
+router.post("/cancelappointment", appointmentData.validateCancelAppointment, AppointmentController.cancelAppointment)
 router.put("/rescheduleappointment", appointmentData.validateRescheduleAppointment, AppointmentController.rescheduleAppointment);
 router.get("/wishlisteditems", wishlist.validateGetAllWishlistedItems, WishtlistController.getAllWishlistedItems);
 router.get("/customerprofile", loginregister.validateGetCustomerProfile, LoginRegisterController.getCustomerProfile);
@@ -145,3 +152,5 @@ router.put('/customerprofile', loginregister.validateUpdateCustomerProfile, Logi
 router.post('/confirm-appointment', PaymentsController.confirmAppointment)
 
 module.exports = router;
+
+
