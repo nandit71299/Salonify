@@ -1,6 +1,6 @@
-.env
-node_modules
-db.js
-enums.js
-newFile.js
-secrets.js
+/node_modules
+/logs
+/.env
+/enums.js
+/Notes.txt
+/public
